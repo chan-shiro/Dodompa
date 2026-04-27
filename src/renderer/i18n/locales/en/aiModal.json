@@ -1,0 +1,34 @@
+{
+  "fix": {
+    "title": "🔧 AI fix suggestion",
+    "close": "✕",
+    "analyzing": "🤖 Analyzing...",
+    "analyzingHint": "AI is analyzing the error and drafting a fix",
+    "analysis": "Root cause",
+    "confidence": "Confidence: {{level}}",
+    "fixedCode": "Fixed code",
+    "applying": "Applying...",
+    "approve": "Approve & apply",
+    "reject": "Reject"
+  },
+  "edit": {
+    "title": "AI edit step",
+    "close": "✕",
+    "instruction": "Edit instruction",
+    "instructionPlaceholder": "e.g. Increase timeout to 60s\ne.g. Wait 2s after click\ne.g. Add error handling",
+    "generateHint": "⌘Enter to generate",
+    "generating": "🤖 AI is editing the code...",
+    "generatingHint": "Applying your instruction",
+    "error": "⚠️ {{message}}",
+    "summary": "Changes",
+    "instructionRecap": "Instruction:",
+    "diff": "Diff",
+    "generate": "Generate edit with AI",
+    "cancel": "Cancel",
+    "generatingState": "Generating...",
+    "approve": "✅ Approve & apply",
+    "reject": "Reject",
+    "back": "← Edit instruction",
+    "applying": "Applying..."
+  }
+}

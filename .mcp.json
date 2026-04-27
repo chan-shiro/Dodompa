@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "dodompa-desktop": {
+      "command": "node",
+      "args": [
+        "/path/to/dodompa/mcp/dist/index.js"
+      ]
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "title": "🧹 タスクの整理",
+  "candidates": "{{count}}件の候補",
+  "close": "✕",
+  "emptyIcon": "✨",
+  "emptyTitle": "整理の必要はありません",
+  "emptyHint": "未実行・失敗続き・長期未使用のタスクは見つかりませんでした",
+  "selectAll": "すべて選択",
+  "clearSelection": "選択解除",
+  "selectedCount": "{{count}}件選択中",
+  "categories": {
+    "empty": {
+      "label": "ステップが空",
+      "description": "ステップが1つもないため実行できません",
+      "reason": "ステップなし"
+    },
+    "never": {
+      "label": "一度も実行していない",
+      "description": "作成後に1度も実行されていないタスクです",
+      "reason": "実行履歴なし"
+    },
+    "failing": {
+      "label": "失敗が多い",
+      "description": "失敗率が{{ratio}}%以上のタスクです（最低{{min}}回実行済み）",
+      "reason": "{{total}}回中{{failed}}回失敗 ({{pct}}%)"
+    },
+    "dormant": {
+      "label": "長期間使っていない",
+      "description": "最終実行から{{days}}日以上経過しているタスクです",
+      "reason": "最終実行: {{days}}日前"
+    }
+  },
+  "stepsLabel": "· {{count}}ステップ",
+  "lastRunAt": "· 最終実行: {{date}}",
+  "createdAt": "· 作成: {{date}}",
+  "deleting": "⏳ 削除中...",
+  "deleteSelected": "🗑 選択した{{count}}件を削除",
+  "confirmDelete": "選択した{{count}}個のタスクを削除します。この操作は取り消せません。続行しますか？",
+  "deleteFailed": "削除に失敗しました",
+  "footerClose": "閉じる"
+}

@@ -1,0 +1,42 @@
+{
+  "app": {
+    "name": "Dodompa",
+    "tagline": "Dynamic Orchestration and Development Of Machine Process Automation"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "create": "Create",
+    "close": "Close",
+    "confirm": "Confirm",
+    "submit": "Submit",
+    "loading": "Loading...",
+    "saving": "Saving...",
+    "ok": "OK",
+    "retry": "Retry",
+    "back": "Back"
+  },
+  "status": {
+    "success": "Success",
+    "failure": "Failed",
+    "pending": "Pending",
+    "running": "Running"
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo_one": "{{count}} min ago",
+    "minutesAgo_other": "{{count}} min ago",
+    "hoursAgo_one": "{{count}} hr ago",
+    "hoursAgo_other": "{{count}} hrs ago",
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago"
+  },
+  "errors": {
+    "generic": "Something went wrong",
+    "saveFailed": "Failed to save",
+    "deleteFailed": "Failed to delete: {{message}}"
+  }
+}

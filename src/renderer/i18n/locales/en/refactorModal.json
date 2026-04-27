@@ -1,0 +1,50 @@
+{
+  "titleInput": "Refactor instruction",
+  "titlePreview": "Refactor preview",
+  "close": "✕",
+  "instruction": "Refactor instruction",
+  "instructionRequired": "*",
+  "instructionHint": "AI will use existing steps as the baseline and apply only the required diff (modify / add / delete).",
+  "instructionPlaceholder": "e.g. Add retry logic with a longer timeout\ne.g. Parameterize the search keyword",
+  "analyze": "🔍 Analyze changes",
+  "analyzing": "⏳ Analyzing...",
+  "generateHint": "⌘Enter to analyze",
+  "noCode": "(no code)",
+  "applyingCount": "⏳ Applying...",
+  "applyCount": "✅ Apply {{count}} and debug",
+  "back": "← Back",
+  "cancel": "Cancel",
+  "rationale": "AI analysis",
+  "noChanges": "No steps require changes",
+  "noChangesHint": "The AI determined the existing implementation already satisfies the instruction.",
+  "summary": "Changes ({{accepted}}/{{total}})",
+  "streamHeader": "✍️ Generating code",
+  "streamChars": "{{count}} chars",
+  "streamLabels": {
+    "newCode": "full code",
+    "replace": "patch: replace",
+    "search": "patch: search"
+  },
+  "errors": {
+    "analyze": "Analysis failed",
+    "apply": "Failed to apply"
+  },
+  "opBadges": {
+    "modify": "Modify",
+    "add": "Add",
+    "delete": "Delete"
+  },
+  "op": {
+    "deletedTitle": "(delete)",
+    "addedStepSub": "new · {{type}}",
+    "insertAfter": "Insert position: right after {{id}}…",
+    "insertTop": "Insert position: top"
+  },
+  "diff": {
+    "heading": "Diff view",
+    "removed": "− removed",
+    "added": "+ added",
+    "expand": "▶ Show code",
+    "collapse": "▼ Hide code"
+  }
+}

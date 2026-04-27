@@ -1,0 +1,33 @@
+{
+  "title": "タスク一覧",
+  "cleanup": "🧹 整理する",
+  "cleanupTitle": "使っていないタスクや失敗の多いタスクを整理",
+  "import": "📥 インポート",
+  "importTitle": "タスクファイルをインポート",
+  "newTask": "+ 新規タスク",
+  "namePlaceholder": "タスク名を入力...",
+  "empty": "タスクがありません",
+  "emptyHint": "「新規タスク」ボタンから最初のタスクを作成しましょう",
+  "columns": {
+    "name": "タスク名",
+    "steps": "ステップ",
+    "status": "ステータス",
+    "runs": "実行",
+    "success": "成功",
+    "failed": "失敗",
+    "lastRun": "最終実行",
+    "actions": "操作"
+  },
+  "status": {
+    "broken": "{{count}} broken",
+    "flaky": "{{count}} flaky",
+    "stable": "stable",
+    "unset": "未設定"
+  },
+  "actionHints": {
+    "edit": "編集",
+    "delete": "削除"
+  },
+  "confirmDelete": "タスク「{{name}}」を削除しますか？この操作は取り消せません。",
+  "deleteFailed": "削除に失敗しました: {{message}}"
+}

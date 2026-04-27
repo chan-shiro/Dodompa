@@ -1,0 +1,116 @@
+{
+  "back": "← 戻る",
+  "loading": "読み込み中...",
+  "notFound": "タスクが見つかりません",
+  "addDescription": "説明を追加...",
+  "descriptionEmpty": "説明を追加...",
+  "generateDescriptionTitle": "AIで説明を生成",
+  "generateDescriptionGenerating": "⏳ 生成中...",
+  "generateDescription": "✨ AI生成",
+  "generationLog": {
+    "title": "🤖 AI Generation Log",
+    "count": "({{count}}件)",
+    "loading": "読み込み中...",
+    "empty": "AI生成ログがありません",
+    "clickToZoom": "📸 クリックで拡大",
+    "close": "✕"
+  },
+  "instruction": {
+    "title": "📋 生成指示",
+    "initial": "初回の生成指示",
+    "latest": "最新の生成指示",
+    "current": "生成指示",
+    "edit": "✎ 編集",
+    "save": "保存",
+    "saving": "保存中...",
+    "cancel": "キャンセル",
+    "empty": "指示はまだありません",
+    "close": "✕"
+  },
+  "storage": {
+    "title": "ストレージ",
+    "loading": "読み込み中...",
+    "screenshots": "スクリーンショット",
+    "screenshotsValue": "{{count}}枚 / {{size}}",
+    "executions": "実行ログ",
+    "executionsValue": "{{count}}件 ({{steps}}ステップ)",
+    "generationLogs": "生成ログ",
+    "generationLogsValue": "{{count}}件",
+    "aiLogs": "AIログ",
+    "aiLogsValue": "{{count}}件",
+    "cleanupOld": "古いデータを削除（直近5回分を残す）",
+    "cleanupOldBusy": "削除中...",
+    "cleanupAll": "🗑 すべてクリア",
+    "confirmAll": "このタスクのすべての実行ログ・生成ログ・AIログ・スクリーンショットを削除します。この操作は取り消せません。よろしいですか？",
+    "confirmOld": "直近{{keep}}回分の実行データを残して、古いスクリーンショットとログを削除します。よろしいですか？"
+  },
+  "tabs": {
+    "detail": "タスク詳細",
+    "logs": "ログ"
+  },
+  "runNow": "▶ 今すぐ実行",
+  "runNowBusy": "実行中...",
+  "generateStep": "🤖 AIでステップ生成",
+  "refactor": "🔧 修正指示",
+  "refactorTitle": "既存のステップをベースに、AIに修正指示を出す",
+  "instructionBtn": "📋 生成指示",
+  "instructionBtnTitle": "生成指示を見る・編集",
+  "logBtn": "🤖 生成ログ",
+  "logBtnTitle": "AI生成ログを見る",
+  "export": "📤 エクスポート",
+  "exportTitle": "タスクをファイルにエクスポート",
+  "delete": "削除",
+  "loginRequired": "🔐 ログインが必要です",
+  "loginHint": "ブラウザでログインしてからボタンを押してください",
+  "loginDone": "ログイン完了",
+  "aiMessage": "ログインが必要です",
+  "aiOutputLabel": "AI出力: {{count}}文字",
+  "debugMode": "デバッグモード",
+  "debugStep": " — ステップ「{{description}}」",
+  "debugRerun": "🔄 再実行",
+  "debugEnd": "終了",
+  "parameters": "パラメーター ({{count}})",
+  "steps": {
+    "heading": "ステップ ({{count}})",
+    "deleteAll": "すべて削除",
+    "empty": "ステップがありません。AIで生成するか、手動で追加してください。",
+    "addStep": "+ ステップを追加"
+  },
+  "schedule": {
+    "label": "スケジュール:"
+  },
+  "runDialog": {
+    "title": "▶ 実行パラメーター",
+    "defaultHint": "デフォルト: {{value}}",
+    "run": "▶ 実行",
+    "cancel": "キャンセル"
+  },
+  "generateDialog": {
+    "title": "🤖 AIでステップを生成",
+    "instruction": "ステップ指示",
+    "instructionPlaceholder": "タスク全体を説明してください...\n例: Googleにアクセスして「Playwright」を検索し、最初の結果をクリックする",
+    "goal": "最終成果物・目的（任意）",
+    "goalPlaceholder": "例: 甲府市の現在公募中の調達案件一覧（案件名、期限、入札資格等）をCSVにまとめる",
+    "start": "AI生成開始",
+    "cancel": "キャンセル"
+  },
+  "streamBanner": {
+    "running": "AI 生成中...",
+    "clickToOpen": "クリックで表示"
+  },
+  "picker": {
+    "title": "🎯 要素ピッカー結果",
+    "copy": "コピー",
+    "waiting": "対象の要素をクリックしてください...",
+    "error": "エラー: {{message}}",
+    "none": "(なし)",
+    "noElement": "要素が取得できませんでした（カーソル位置: {{x}}, {{y}}）",
+    "hint": "💡 Cmd+Shift+E → 対象をクリック で要素を取得"
+  },
+  "confirmDelete": "このタスクを削除しますか？",
+  "confirmDeleteStep": "このステップを削除しますか？",
+  "confirmDeleteAllSteps": "すべてのステップ（{{count}}個）を削除しますか？\nこの操作は取り消せません。",
+  "exported": "エクスポートしました: {{path}}",
+  "exportFailed": "エクスポートに失敗しました: {{message}}",
+  "deleteAllStepsConfirm": "すべてのステップを削除"
+}

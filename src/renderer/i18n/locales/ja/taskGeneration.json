@@ -1,0 +1,111 @@
+{
+  "title": "AI 生成",
+  "stages": {
+    "plan": "PLAN",
+    "analyze": "ANALYZE",
+    "actionPlan": "ACTPLAN",
+    "select": "SELECT",
+    "code": "CODE",
+    "exec": "EXEC",
+    "verify": "VERIFY",
+    "fix": "FIX",
+    "replan": "REPLAN",
+    "done": "DONE",
+    "error": "ERROR",
+    "gen": "GEN",
+    "login": "LOGIN",
+    "ask": "ASK",
+    "err": "ERR"
+  },
+  "stageDescs": {
+    "planning": "タスク計画",
+    "analyzing": "画面分析",
+    "actionPlan": "アクション計画",
+    "selector": "セレクタ解決",
+    "codegen": "コード生成",
+    "executing": "実行",
+    "verifying": "検証"
+  },
+  "stepCounter": "Step {{current}}/{{total}}",
+  "cancel": "キャンセル",
+  "close": "閉じる",
+  "background": "バックグラウンド",
+  "loginRequired": "🔐 ログインが必要です",
+  "loginHint": "ブラウザでログインを完了してから下のボタンを押してください",
+  "loginDone": "ログイン完了",
+  "answerPlaceholder": "回答を入力...",
+  "submitAnswer": "送信",
+  "submitAnswerEmpty": "そのまま",
+  "scrollToLatest": "↓ 最新ログへスクロール",
+  "rightTab": {
+    "steps": "Steps",
+    "logs": "Logs"
+  },
+  "planning": "プランニング中...",
+  "generationLogsHint": "DB保存済みログ（AI入出力・詳細情報）",
+  "refresh": "↻ 更新",
+  "loadingLogs": "読み込み中...",
+  "noLogs": "ログなし",
+  "clickToZoom": "📸 クリックで拡大",
+  "showHtml": "📄 HTML スナップショットを表示",
+  "hideHtml": "🔽 HTML を閉じる",
+  "moreLines": "+{{count}}行",
+  "details": "詳細",
+  "taskLabel": "📋 タスク: {{instruction}}",
+  "logStream": {
+    "expand": "▶",
+    "collapse": "▼"
+  },
+  "progress": {
+    "browser": {
+      "analyzing": "🔍 ページを分析中...",
+      "screenshotDone": "📸 スクリーンショット取得完了",
+      "detectingElements": "🔎 ページの操作可能な要素を検出中...",
+      "analysisComplete": "📋 ページ分析完了: {{url}}\n  → {{count}}個の操作可能な要素を検出",
+      "detectedElements": "🗂️ 検出した要素一覧:\n{{preview}}"
+    },
+    "desktop": {
+      "analyzing": "🔍 デスクトップを分析中...",
+      "accessibilityRequired": "⚠️ アクセシビリティ権限が必要です。システム設定 > プライバシーとセキュリティ > アクセシビリティ でこのアプ��を許可してください。",
+      "screenshotEmpty": "⚠️ スクリーンショットが空です。システム設定 > プライバシーとセキュリティ > 画面収録 でこのアプリを許可してください。",
+      "screenshotDone": "📸 スクリーンショット取得完了",
+      "screenshotError": "⚠️ スクリーンショット取得エラー: {{error}}",
+      "windowListFetching": "🖥️ ウィンドウ一覧を取得中...",
+      "noWindowsDetected": "⚠️ ウィンドウが検出されません。アクセシビリティ権限を確認してください。",
+      "windowsDetected": "🖥️ {{count}}個のウィンドウを検出",
+      "windowListError": "⚠️ ウィンドウ一覧取得エラー: {{error}}",
+      "windowMatching": "🤖 AIでウィンドウを特定中...",
+      "appLaunchStep": "🚀 アプリ起動ステップ ({{appName}}) — AXツリー分析をスキップ",
+      "pidNotFound": "⏳ PID {{pid}} がウィンドウ一覧に見つかりません。起動待ち中...",
+      "retryDetected": "🔄 リトライ{{attempt}}: {{app}} (PID {{pid}}) を検出",
+      "targetWindow": "🎯 対象ウィンドウ: {{app}} (PID {{pid}})",
+      "axTreeFetching": "🌳 AXツリーを��得中: {{app}} (PID {{pid}})...",
+      "windowSubtreeNarrowed": "🎯 ウィンドウ「{{title}}」のサブツリーに絞り込みました",
+      "shallowAxTree": "⚠️ AXツリ���が浅い ({{count}}要素): Electron/WebViewアプリの可能性。キーボード操作・bounds相対座標を推奨",
+      "axTreeDone": "🌳 AXツリー取得完了: {{count}}個の操作可能な要素を検出",
+      "axTreeElements": "🗂️ AXツリー要素一覧:\n{{preview}}",
+      "axTreeError": "⚠️ AXツリー取得エラー (PID {{pid}}): {{error}}",
+      "analysisComplete": "✅ デスクトップ分析完了: {{app}}"
+    },
+    "reanalysis": {
+      "browserStarted": "🔄 ページ再分析中 (リトライ {{retries}})...",
+      "browserComplete": "📸 ページ再分析完了 (リトライ {{retries}}): {{url}}",
+      "desktopStarted": "🔄 デスクトップ再分析中 (リトライ {{retries}})...",
+      "desktopTarget": "🎯 再分析対象: {{app}} (PID {{pid}}) — AI判定: \"{{aiMatch}}\"",
+      "desktopComplete": "📸 デスクトップ再分析完了 (リトライ {{retries}})"
+    },
+    "selector": {
+      "resolvingBrowser": "🔍 セレク��を検証・解決中 ({{count}}個のアクション)...",
+      "resolving": "🔍 セレクタ解決中: {{description}} (ヒント: \"{{hint}}\")",
+      "resolved": "✅ セレクタ解決: {{description}} → {{selector}}",
+      "unresolved": "⚠️ セレクタ未解決: {{description}} (ヒント: \"{{hint}}\")",
+      "completeBrowser": "✅ セレクタ解決完了: {{resolvedCount}}個解決 / {{unresolvedCount}}個未解決",
+      "resolvingDesktop": "🔍 デスクトップ要素を検証・解決中 ({{count}}個のアクション)...",
+      "resolvingDesktopElement": "🔍 デスクトップ要素解決中: {{description}} ({{axRole}}: \"{{axTitle}}\")",
+      "resolvedDesktop": "✅ デスクトップ要素解決: {{description}}",
+      "unresolvedDesktop": "⚠️ デスクトップ要素未解決: {{description}} ({{axRole}}: \"{{axTitle}}\")",
+      "unresolvedDesktopCandidates": "⚠️ デスクトップ要素未解決: {{description}} ({{axRole}}: \"{{axTitle}}\")",
+      "completeDesktop": "✅ デスクトップ要素解決完了: {{resolvedCount}}個解決 / {{unresolvedCount}}個未解決"
+    }
+  }
+}

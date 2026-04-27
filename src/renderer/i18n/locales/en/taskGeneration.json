@@ -1,0 +1,111 @@
+{
+  "title": "AI Generation",
+  "stages": {
+    "plan": "PLAN",
+    "analyze": "ANALYZE",
+    "actionPlan": "ACTPLAN",
+    "select": "SELECT",
+    "code": "CODE",
+    "exec": "EXEC",
+    "verify": "VERIFY",
+    "fix": "FIX",
+    "replan": "REPLAN",
+    "done": "DONE",
+    "error": "ERROR",
+    "gen": "GEN",
+    "login": "LOGIN",
+    "ask": "ASK",
+    "err": "ERR"
+  },
+  "stageDescs": {
+    "planning": "Task planning",
+    "analyzing": "Screen analysis",
+    "actionPlan": "Action planning",
+    "selector": "Selector resolution",
+    "codegen": "Code generation",
+    "executing": "Execution",
+    "verifying": "Verification"
+  },
+  "stepCounter": "Step {{current}}/{{total}}",
+  "cancel": "Cancel",
+  "close": "Close",
+  "background": "Background",
+  "loginRequired": "🔐 Login required",
+  "loginHint": "Finish logging in via the browser, then click the button below.",
+  "loginDone": "Login done",
+  "answerPlaceholder": "Type your answer...",
+  "submitAnswer": "Submit",
+  "submitAnswerEmpty": "Keep as-is",
+  "scrollToLatest": "↓ Scroll to latest",
+  "rightTab": {
+    "steps": "Steps",
+    "logs": "Logs"
+  },
+  "planning": "Planning...",
+  "generationLogsHint": "Saved DB logs (AI I/O and details)",
+  "refresh": "↻ Refresh",
+  "loadingLogs": "Loading...",
+  "noLogs": "No logs",
+  "clickToZoom": "📸 Click to zoom",
+  "showHtml": "📄 Show HTML snapshot",
+  "hideHtml": "🔽 Hide HTML",
+  "moreLines": "+{{count}} lines",
+  "details": "details",
+  "taskLabel": "📋 Task: {{instruction}}",
+  "logStream": {
+    "expand": "▶",
+    "collapse": "▼"
+  },
+  "progress": {
+    "browser": {
+      "analyzing": "🔍 Analyzing page...",
+      "screenshotDone": "📸 Screenshot captured",
+      "detectingElements": "🔎 Detecting interactive elements on page...",
+      "analysisComplete": "📋 Page analysis complete: {{url}} ({{count}} interactive elements detected)",
+      "detectedElements": "🗂️ Detected elements:\n{{preview}}"
+    },
+    "desktop": {
+      "analyzing": "🔍 Analyzing desktop...",
+      "accessibilityRequired": "⚠️ Accessibility permission required. Please allow this app in System Settings > Privacy & Security > Accessibility.",
+      "screenshotEmpty": "⚠️ Screenshot is empty. Please allow this app in System Settings > Privacy & Security > Screen Recording.",
+      "screenshotDone": "📸 Screenshot captured",
+      "screenshotError": "⚠️ Screenshot error: {{error}}",
+      "windowListFetching": "🖥️ Fetching window list...",
+      "noWindowsDetected": "⚠️ No windows detected. Please check accessibility permissions.",
+      "windowsDetected": "🖥️ {{count}} windows detected",
+      "windowListError": "⚠️ Window list error: {{error}}",
+      "windowMatching": "🤖 Identifying target window via AI...",
+      "appLaunchStep": "🚀 App launch step ({{appName}}) — skipping AX tree analysis",
+      "pidNotFound": "⏳ PID {{pid}} not found in window list. Waiting for launch...",
+      "retryDetected": "🔄 Retry {{attempt}}: detected {{app}} (PID {{pid}})",
+      "targetWindow": "🎯 Target window: {{app}} (PID {{pid}})",
+      "axTreeFetching": "🌳 Fetching AX tree: {{app}} (PID {{pid}})...",
+      "windowSubtreeNarrowed": "🎯 Narrowed to subtree for window \"{{title}}\"",
+      "shallowAxTree": "⚠️ Shallow AX tree ({{count}} elements): possible Electron/WebView app. Recommend keyboard operations and bounds-relative coordinates",
+      "axTreeDone": "🌳 AX tree fetched: {{count}} interactive elements detected",
+      "axTreeElements": "🗂️ AX tree elements:\n{{preview}}",
+      "axTreeError": "⚠️ AX tree error (PID {{pid}}): {{error}}",
+      "analysisComplete": "✅ Desktop analysis complete: {{app}}"
+    },
+    "reanalysis": {
+      "browserStarted": "🔄 Re-analyzing page (retry {{retries}})...",
+      "browserComplete": "📸 Page re-analysis complete (retry {{retries}}): {{url}}",
+      "desktopStarted": "🔄 Re-analyzing desktop (retry {{retries}})...",
+      "desktopTarget": "🎯 Re-analysis target: {{app}} (PID {{pid}}) — AI match: \"{{aiMatch}}\"",
+      "desktopComplete": "📸 Desktop re-analysis complete (retry {{retries}})"
+    },
+    "selector": {
+      "resolvingBrowser": "🔍 Resolving selectors ({{count}} actions)...",
+      "resolving": "🔍 Resolving selector: {{description}} (hint: \"{{hint}}\")",
+      "resolved": "✅ Selector resolved: {{description}} → {{selector}}",
+      "unresolved": "⚠️ Selector unresolved: {{description}} (hint: \"{{hint}}\")",
+      "completeBrowser": "✅ Selector resolution complete: {{resolvedCount}} resolved / {{unresolvedCount}} unresolved",
+      "resolvingDesktop": "🔍 Resolving desktop elements ({{count}} actions)...",
+      "resolvingDesktopElement": "🔍 Resolving desktop element: {{description}} ({{axRole}}: \"{{axTitle}}\")",
+      "resolvedDesktop": "✅ Desktop element resolved: {{description}}",
+      "unresolvedDesktop": "⚠️ Desktop element unresolved: {{description}} ({{axRole}}: \"{{axTitle}}\")",
+      "unresolvedDesktopCandidates": "⚠️ Desktop element unresolved: {{description}} ({{axRole}}: \"{{axTitle}}\")",
+      "completeDesktop": "✅ Desktop element resolution complete: {{resolvedCount}} resolved / {{unresolvedCount}} unresolved"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "title": "変数",
+  "types": {
+    "string": "テキスト",
+    "number": "数値",
+    "secret": "シークレット"
+  },
+  "form": {
+    "key": "キー",
+    "keyRequired": "*",
+    "keyPlaceholder": "search_term",
+    "label": "ラベル（表示名）",
+    "labelPlaceholder": "検索キーワード",
+    "type": "型",
+    "default": "デフォルト値（任意）",
+    "defaultPlaceholder": "省略時の値",
+    "required": "必須パラメーター（実行時に入力必須）"
+  },
+  "errors": {
+    "keyRequired": "キーは必須です",
+    "keyPattern": "英数字とアンダースコアのみ使用可能です（先頭は英字）",
+    "keyDuplicate": "このキーは既に使用されています"
+  },
+  "actions": {
+    "addManual": "手動で追加",
+    "suggestAi": "✨ AIで提案",
+    "edit": "編集",
+    "delete": "削除",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "addNew": "追加"
+  },
+  "row": {
+    "noLabel": "(ラベルなし)",
+    "requiredBadge": "必須",
+    "defaultLabel": "デフォルト:"
+  },
+  "suggest": {
+    "title": "✨ AIがパラメーターを提案",
+    "description": "タスクのステップコードを分析して、ハードコードされた値をパラメーター化する提案をします。",
+    "instructionLabel": "追加の指示（任意）",
+    "instructionPlaceholder": "例: URLもパラメーター化して　/ シークレット系は secret 型で",
+    "generate": "🔍 提案を生成",
+    "generating": "⏳ 分析中...",
+    "empty": "提案するパラメーターはありませんでした（すでに十分定義されているか、ハードコード値がありません）",
+    "countLabel": "{{count}}件の提案",
+    "addAll": "すべて追加",
+    "added": "✅ 追加済み",
+    "add": "追加"
+  },
+  "usage": {
+    "heading": "ステップコード内での使い方:",
+    "requiredSuffix": " (必須)"
+  }
+}

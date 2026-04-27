@@ -1,0 +1,32 @@
+{
+  "title": "Logs",
+  "tabs": {
+    "execution": "📊 Execution Logs",
+    "ai": "🤖 AI Logs"
+  },
+  "typeLabel": {
+    "generation": "🤖 Gen",
+    "fix": "🔧 Fix"
+  },
+  "empty": {
+    "execution": "No execution logs",
+    "ai": "No AI logs"
+  },
+  "executionLogs": {
+    "heading": "📊 Execution Logs",
+    "count": "({{total}} logs{{suffix}})",
+    "countSuffix": " · ✅{{success}} / ❌{{failed}}",
+    "loading": "Loading...",
+    "empty": "No execution history",
+    "noStepLogs": "No step logs",
+    "sharedState": "Shared state ({{count}})",
+    "page": "Page:",
+    "started": "Started: {{time}}",
+    "finished": "Finished: {{time}}",
+    "duration": "Duration: {{seconds}}s",
+    "before": "Before",
+    "afterSuccess": "After",
+    "afterFailure": "At error",
+    "screenshotLink": "📸 Screenshot"
+  }
+}

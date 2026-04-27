@@ -1,0 +1,86 @@
+{
+  "title": "Settings",
+  "tabs": {
+    "general": "General",
+    "knowledge": "Knowledge"
+  },
+  "language": {
+    "title": "Language",
+    "description": "Select the interface language. AI output will also follow this setting.",
+    "auto": "Auto (System)",
+    "en": "English",
+    "ja": "日本語"
+  },
+  "providers": {
+    "title": "AI Providers",
+    "empty": "No AI provider configured yet.",
+    "add": "+ Add provider",
+    "name": "Display name",
+    "type": "Type",
+    "types": {
+      "anthropic": "Anthropic (Claude)",
+      "openai": "OpenAI (GPT)",
+      "google": "Google (Gemini)",
+      "openaiCompatible": "OpenAI-compatible (Ollama, etc.)"
+    },
+    "apiKey": "API key",
+    "apiKeySaved": "Saved (only enter to change)",
+    "baseUrl": "Base URL",
+    "model": "Model",
+    "fetchModels": "Fetch models",
+    "testConnection": "Test connection",
+    "testSuccess": "✅ Connection OK",
+    "testFailure": "❌ Connection failed",
+    "fetchFailed": "Failed to fetch model list",
+    "active": "Active",
+    "makeActive": "Make active",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirmDelete": "Delete this provider?"
+  },
+  "profiles": {
+    "title": "Browser profiles",
+    "description": "Persistent Chromium profiles. Log in once and reuse across tasks.",
+    "empty": "No browser profile yet.",
+    "add": "+ New profile",
+    "namePlaceholder": "Profile name...",
+    "open": "Open browser",
+    "delete": "Delete",
+    "confirmDelete": "Delete profile \"{{name}}\"? Stored login state is erased."
+  },
+  "general": {
+    "title": "General",
+    "playwrightPath": "Playwright executable path",
+    "playwrightPathHint": "Path to the Chromium binary used by Playwright. Leave blank to use the bundled one.",
+    "defaultHeadless": "Use headless mode by default",
+    "save": "Save"
+  },
+  "knowledge": {
+    "title": "Knowledge",
+    "description": "App-specific automation knowledge injected into AI prompts at runtime.",
+    "filter": {
+      "all": "All",
+      "mac": "macOS",
+      "windows": "Windows",
+      "browser": "Browser"
+    },
+    "add": "+ Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "builtin": "Built-in",
+    "confirmDelete": "Delete this knowledge entry?",
+    "empty": "No knowledge entries.",
+    "form": {
+      "name": "Name (ID)",
+      "displayName": "Display name",
+      "platform": "Platform",
+      "aliases": "Aliases (comma-separated)",
+      "bundleIds": "Bundle IDs (comma-separated)",
+      "body": "Knowledge body (Markdown)",
+      "save": "Save",
+      "cancel": "Cancel"
+    }
+  }
+}

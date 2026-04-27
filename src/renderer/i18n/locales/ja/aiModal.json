@@ -1,0 +1,34 @@
+{
+  "fix": {
+    "title": "🔧 AI修正提案",
+    "close": "✕",
+    "analyzing": "🤖 分析中...",
+    "analyzingHint": "AIがエラーを分析して修正案を作成しています",
+    "analysis": "原因分析",
+    "confidence": "信頼度: {{level}}",
+    "fixedCode": "修正コード",
+    "applying": "適用中...",
+    "approve": "承認して適用",
+    "reject": "却下"
+  },
+  "edit": {
+    "title": "AIでステップを変更",
+    "close": "✕",
+    "instruction": "変更の指示",
+    "instructionPlaceholder": "例: タイムアウトを60秒に変更して\n例: クリック後に2秒待機を追加して\n例: エラーハンドリングを追加して",
+    "generateHint": "⌘Enter で生成",
+    "generating": "🤖 AIがコードを変更中...",
+    "generatingHint": "指示の内容を反映しています",
+    "error": "⚠️ {{message}}",
+    "summary": "変更内容",
+    "instructionRecap": "指示:",
+    "diff": "差分",
+    "generate": "AIで変更を生成",
+    "cancel": "キャンセル",
+    "generatingState": "生成中...",
+    "approve": "✅ 承認して適用",
+    "reject": "却下",
+    "back": "← 指示を修正",
+    "applying": "適用中..."
+  }
+}

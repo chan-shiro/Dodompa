@@ -1,0 +1,33 @@
+{
+  "title": "Tasks",
+  "cleanup": "🧹 Clean up",
+  "cleanupTitle": "Clean up unused or frequently-failing tasks",
+  "import": "📥 Import",
+  "importTitle": "Import a task file",
+  "newTask": "+ New Task",
+  "namePlaceholder": "Enter task name...",
+  "empty": "No tasks yet",
+  "emptyHint": "Click \"New Task\" to create your first one",
+  "columns": {
+    "name": "Name",
+    "steps": "Steps",
+    "status": "Status",
+    "runs": "Runs",
+    "success": "Success",
+    "failed": "Failed",
+    "lastRun": "Last Run",
+    "actions": "Actions"
+  },
+  "status": {
+    "broken": "{{count}} broken",
+    "flaky": "{{count}} flaky",
+    "stable": "stable",
+    "unset": "not set"
+  },
+  "actionHints": {
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "confirmDelete": "Delete task \"{{name}}\"? This cannot be undone.",
+  "deleteFailed": "Failed to delete: {{message}}"
+}

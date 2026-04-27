@@ -1,0 +1,55 @@
+{
+  "title": "Variables",
+  "types": {
+    "string": "Text",
+    "number": "Number",
+    "secret": "Secret"
+  },
+  "form": {
+    "key": "Key",
+    "keyRequired": "*",
+    "keyPlaceholder": "search_term",
+    "label": "Label (display name)",
+    "labelPlaceholder": "Search term",
+    "type": "Type",
+    "default": "Default value (optional)",
+    "defaultPlaceholder": "Value when omitted",
+    "required": "Required (must be provided at run time)"
+  },
+  "errors": {
+    "keyRequired": "Key is required",
+    "keyPattern": "Use letters, digits, and underscores only (must start with a letter)",
+    "keyDuplicate": "This key is already in use"
+  },
+  "actions": {
+    "addManual": "Add manually",
+    "suggestAi": "✨ AI suggest",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "addNew": "Add"
+  },
+  "row": {
+    "noLabel": "(no label)",
+    "requiredBadge": "required",
+    "defaultLabel": "Default:"
+  },
+  "suggest": {
+    "title": "✨ AI suggests parameters",
+    "description": "Analyze the task step code and suggest values to parameterize.",
+    "instructionLabel": "Additional instruction (optional)",
+    "instructionPlaceholder": "e.g. parameterize the URL too / treat secrets as secret type",
+    "generate": "🔍 Generate suggestions",
+    "generating": "⏳ Analyzing...",
+    "empty": "Nothing to suggest (already well-defined or no hard-coded values).",
+    "countLabel": "{{count}} suggestion(s)",
+    "addAll": "Add all",
+    "added": "✅ Added",
+    "add": "Add"
+  },
+  "usage": {
+    "heading": "How to use in step code:",
+    "requiredSuffix": " (required)"
+  }
+}

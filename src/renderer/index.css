@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@source "./**/*.tsx";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Monochrome-base color palette */
+  --color-notion-bg: #ffffff;
+  --color-notion-sidebar: #fafafa;
+  --color-notion-hover: #f0f0f0;
+  --color-notion-border: #e5e5e5;
+  --color-notion-text-primary: #1a1a1a;
+  --color-notion-text-secondary: #555555;
+  --color-notion-text-muted: #999999;
+  --color-notion-accent: #1a1a1a;
+  --color-notion-success: #22c55e;
+  --color-notion-warning: #eab308;
+  --color-notion-danger: #ef4444;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #ffffff;
+  color: #1a1a1a;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Notion-like scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d3d3d0;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #aeaea8;
+}

@@ -1,0 +1,116 @@
+{
+  "back": "← Back",
+  "loading": "Loading...",
+  "notFound": "Task not found",
+  "addDescription": "Add a description...",
+  "descriptionEmpty": "Add a description...",
+  "generateDescriptionTitle": "Generate description with AI",
+  "generateDescriptionGenerating": "⏳ Generating...",
+  "generateDescription": "✨ AI generate",
+  "generationLog": {
+    "title": "🤖 AI Generation Log",
+    "count": "({{count}})",
+    "loading": "Loading...",
+    "empty": "No AI generation logs",
+    "clickToZoom": "📸 Click to zoom",
+    "close": "✕"
+  },
+  "instruction": {
+    "title": "📋 Generation instruction",
+    "initial": "Initial generation instruction",
+    "latest": "Latest generation instruction",
+    "current": "Generation instruction",
+    "edit": "✎ Edit",
+    "save": "Save",
+    "saving": "Saving...",
+    "cancel": "Cancel",
+    "empty": "No instruction yet",
+    "close": "✕"
+  },
+  "storage": {
+    "title": "Storage",
+    "loading": "Loading...",
+    "screenshots": "Screenshots",
+    "screenshotsValue": "{{count}} ({{size}})",
+    "executions": "Execution logs",
+    "executionsValue": "{{count}} ({{steps}} steps)",
+    "generationLogs": "Generation logs",
+    "generationLogsValue": "{{count}}",
+    "aiLogs": "AI logs",
+    "aiLogsValue": "{{count}}",
+    "cleanupOld": "Delete old data (keep last 5)",
+    "cleanupOldBusy": "Deleting...",
+    "cleanupAll": "🗑 Clear everything",
+    "confirmAll": "Delete ALL execution logs, generation logs, AI logs, and screenshots for this task. This cannot be undone. Are you sure?",
+    "confirmOld": "Keep the last {{keep}} executions and delete older screenshots and logs. Continue?"
+  },
+  "tabs": {
+    "detail": "Task detail",
+    "logs": "Logs"
+  },
+  "runNow": "▶ Run now",
+  "runNowBusy": "Running...",
+  "generateStep": "🤖 AI generate steps",
+  "refactor": "🔧 Refactor",
+  "refactorTitle": "Instruct AI to edit existing steps",
+  "instructionBtn": "📋 Instruction",
+  "instructionBtnTitle": "View / edit generation instruction",
+  "logBtn": "🤖 Generation log",
+  "logBtnTitle": "View AI generation log",
+  "export": "📤 Export",
+  "exportTitle": "Export task to a file",
+  "delete": "Delete",
+  "loginRequired": "🔐 Login required",
+  "loginHint": "Log in via the browser, then click the button",
+  "loginDone": "Login done",
+  "aiMessage": "Login required",
+  "aiOutputLabel": "AI output: {{count}} chars",
+  "debugMode": "Debug mode",
+  "debugStep": " — step \"{{description}}\"",
+  "debugRerun": "🔄 Re-run",
+  "debugEnd": "End",
+  "parameters": "Parameters ({{count}})",
+  "steps": {
+    "heading": "Steps ({{count}})",
+    "deleteAll": "Delete all",
+    "empty": "No steps yet. Generate with AI or add manually.",
+    "addStep": "+ Add step"
+  },
+  "schedule": {
+    "label": "Schedule:"
+  },
+  "runDialog": {
+    "title": "▶ Run parameters",
+    "defaultHint": "Default: {{value}}",
+    "run": "▶ Run",
+    "cancel": "Cancel"
+  },
+  "generateDialog": {
+    "title": "🤖 Generate steps with AI",
+    "instruction": "Step instruction",
+    "instructionPlaceholder": "Describe the whole task...\ne.g. Go to Google, search for \"Playwright\", and click the first result",
+    "goal": "Final goal (optional)",
+    "goalPlaceholder": "e.g. Build a CSV of Kofu City's currently-open procurement announcements (title, deadline, bid qualifications)",
+    "start": "Start AI generation",
+    "cancel": "Cancel"
+  },
+  "streamBanner": {
+    "running": "AI generating...",
+    "clickToOpen": "Click to view"
+  },
+  "picker": {
+    "title": "🎯 Element picker result",
+    "copy": "Copy",
+    "waiting": "Click the target element...",
+    "error": "Error: {{message}}",
+    "none": "(none)",
+    "noElement": "No element detected (cursor at {{x}}, {{y}})",
+    "hint": "💡 Cmd+Shift+E → click the target to pick an element"
+  },
+  "confirmDelete": "Delete this task?",
+  "confirmDeleteStep": "Delete this step?",
+  "confirmDeleteAllSteps": "Delete all steps ({{count}})?\nThis cannot be undone.",
+  "exported": "Exported to: {{path}}",
+  "exportFailed": "Export failed: {{message}}",
+  "deleteAllStepsConfirm": "Delete all steps"
+}

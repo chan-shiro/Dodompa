@@ -1,0 +1,41 @@
+{
+  "title": "🧹 Clean up tasks",
+  "candidates": "{{count}} candidates",
+  "close": "✕",
+  "emptyIcon": "✨",
+  "emptyTitle": "Nothing to clean up",
+  "emptyHint": "No unused, failing, or long-dormant tasks found.",
+  "selectAll": "Select all",
+  "clearSelection": "Clear selection",
+  "selectedCount": "{{count}} selected",
+  "categories": {
+    "empty": {
+      "label": "Empty step",
+      "description": "Has no steps — cannot run",
+      "reason": "No steps"
+    },
+    "never": {
+      "label": "Never run",
+      "description": "Never executed since creation",
+      "reason": "No run history"
+    },
+    "failing": {
+      "label": "Fails frequently",
+      "description": "Failure rate ≥ {{ratio}}% (min {{min}} runs)",
+      "reason": "{{failed}}/{{total}} failed ({{pct}}%)"
+    },
+    "dormant": {
+      "label": "Long dormant",
+      "description": "Last run ≥ {{days}} days ago",
+      "reason": "Last run: {{days}} days ago"
+    }
+  },
+  "stepsLabel": "· {{count}} steps",
+  "lastRunAt": "· Last run: {{date}}",
+  "createdAt": "· Created: {{date}}",
+  "deleting": "⏳ Deleting...",
+  "deleteSelected": "🗑 Delete {{count}} selected",
+  "confirmDelete": "Delete {{count}} selected task(s). This cannot be undone. Continue?",
+  "deleteFailed": "Failed to delete",
+  "footerClose": "Close"
+}

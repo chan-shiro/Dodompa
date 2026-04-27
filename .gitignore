@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+*.compiled.mjs
+.DS_Store
+db/
+
+# Swift build artifacts
+native/macos/dodompa-ax/.build/
+native/macos/dodompa-ax/.swiftpm/
+
+# Built binaries (rebuilt via scripts/build-ax.sh)
+resources/bin/
+
+# claude settings
+.claude/settings.local.json

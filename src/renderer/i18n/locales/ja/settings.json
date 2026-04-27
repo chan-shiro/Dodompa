@@ -1,0 +1,86 @@
+{
+  "title": "設定",
+  "tabs": {
+    "general": "一般",
+    "knowledge": "ナレッジ"
+  },
+  "language": {
+    "title": "言語",
+    "description": "インターフェースの言語を選択します。AI の出力もこの設定に従います。",
+    "auto": "自動 (システム)",
+    "en": "English",
+    "ja": "日本語"
+  },
+  "providers": {
+    "title": "AIプロバイダ",
+    "empty": "AIプロバイダがまだ設定されていません。",
+    "add": "+ プロバイダを追加",
+    "name": "表示名",
+    "type": "タイプ",
+    "types": {
+      "anthropic": "Anthropic (Claude)",
+      "openai": "OpenAI (GPT)",
+      "google": "Google (Gemini)",
+      "openaiCompatible": "OpenAI互換 (Ollama等)"
+    },
+    "apiKey": "APIキー",
+    "apiKeySaved": "保存済み (変更する場合のみ入力)",
+    "baseUrl": "Base URL",
+    "model": "モデル",
+    "fetchModels": "モデル取得",
+    "testConnection": "接続テスト",
+    "testSuccess": "✅ 接続成功",
+    "testFailure": "❌ 接続失敗",
+    "fetchFailed": "モデル一覧の取得に失敗しました",
+    "active": "有効",
+    "makeActive": "有効にする",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "edit": "編集",
+    "confirmDelete": "このプロバイダを削除しますか?"
+  },
+  "profiles": {
+    "title": "ブラウザプロファイル",
+    "description": "永続化された Chromium プロファイル。一度ログインすればタスクで再利用できます。",
+    "empty": "ブラウザプロファイルがありません。",
+    "add": "+ 新規プロファイル",
+    "namePlaceholder": "プロファイル名を入力...",
+    "open": "ブラウザを開く",
+    "delete": "削除",
+    "confirmDelete": "プロファイル「{{name}}」を削除しますか？ログイン情報も削除されます。"
+  },
+  "general": {
+    "title": "一般",
+    "playwrightPath": "Playwright 実行パス",
+    "playwrightPathHint": "Playwright が使う Chromium のパス。空欄なら同梱のものを使用。",
+    "defaultHeadless": "デフォルトでヘッドレスモードを使用",
+    "save": "保存"
+  },
+  "knowledge": {
+    "title": "ナレッジ",
+    "description": "AIプロンプトに実行時に注入されるアプリ固有の自動化知識。",
+    "filter": {
+      "all": "全て",
+      "mac": "macOS",
+      "windows": "Windows",
+      "browser": "ブラウザ"
+    },
+    "add": "+ 追加",
+    "edit": "編集",
+    "delete": "削除",
+    "builtin": "ビルトイン",
+    "confirmDelete": "このナレッジを削除しますか?",
+    "empty": "ナレッジエントリがありません。",
+    "form": {
+      "name": "名前 (ID)",
+      "displayName": "表示名",
+      "platform": "プラットフォーム",
+      "aliases": "エイリアス (カンマ区切り)",
+      "bundleIds": "Bundle IDs (カンマ区切り)",
+      "body": "知識本文 (Markdown)",
+      "save": "保存",
+      "cancel": "キャンセル"
+    }
+  }
+}

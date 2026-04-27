@@ -1,0 +1,50 @@
+{
+  "titleInput": "修正指示",
+  "titlePreview": "修正プレビュー",
+  "close": "✕",
+  "instruction": "修正指示",
+  "instructionRequired": "*",
+  "instructionHint": "既存ステップの実装をベースラインに、AIが必要な差分だけを修正/追加/削除します",
+  "instructionPlaceholder": "例: タイムアウトを長くしてリトライ処理を追加して\n例: 検索キーワードを変数化して",
+  "analyze": "🔍 変更箇所を解析",
+  "analyzing": "⏳ 解析中...",
+  "generateHint": "⌘Enter で解析開始",
+  "noCode": "(コードなし)",
+  "applyingCount": "⏳ 適用中...",
+  "applyCount": "✅ {{count}}件を適用してデバッグ",
+  "back": "← 戻る",
+  "cancel": "キャンセル",
+  "rationale": "AIによる分析",
+  "noChanges": "変更が必要なステップは見つかりませんでした",
+  "noChangesHint": "既存の実装で指示を満たせているとAIが判断しました",
+  "summary": "変更内容（{{accepted}}/{{total}}件を適用）",
+  "streamHeader": "✍️ 生成中のコード",
+  "streamChars": "{{count}} 文字",
+  "streamLabels": {
+    "newCode": "full code",
+    "replace": "patch: replace",
+    "search": "patch: search"
+  },
+  "errors": {
+    "analyze": "解析に失敗しました",
+    "apply": "適用に失敗しました"
+  },
+  "opBadges": {
+    "modify": "変更",
+    "add": "追加",
+    "delete": "削除"
+  },
+  "op": {
+    "deletedTitle": "(削除)",
+    "addedStepSub": "new · {{type}}",
+    "insertAfter": "挿入位置: {{id}}… の直後",
+    "insertTop": "挿入位置: 先頭"
+  },
+  "diff": {
+    "heading": "差分ビュー",
+    "removed": "− 削除",
+    "added": "+ 追加",
+    "expand": "▶ コードを確認",
+    "collapse": "▼ コードを隠す"
+  }
+}

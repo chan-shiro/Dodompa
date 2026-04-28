@@ -48,7 +48,47 @@ func requireFlag(_ args: [String], _ flag: String) -> String {
 let args = Array(CommandLine.arguments.dropFirst())
 
 guard let command = args.first else {
-    exitError("Usage: dodompa-ax <command> [options]\n\nCommands:\n  list-windows\n  tree --pid <PID> [--depth N]\n  find --pid <PID> --role <AXRole> [--title text]\n  element-at --x <X> --y <Y>\n  perform-action --pid <PID> --path <path> --action <AXAction>")
+    exitError("Usage: dodompa-ax <command> [options]\n\nCommands:\n  list-windows\n  tree --pid <PID> [--depth N]\n  find --pid <PID> --role <AXRole> [--title text]\n  element-at --x <X> --y <Y> [--depth N]\n  pick [--timeout N] [--depth N]\n  perform-action --pid <PID> --path <path> --action <AXAction>")
+}
+
+struct PickResultJSON: Codable {
+    let x: Double
+    let y: Double
+    let element: AXNodeJSON?
+}
+
+func waitForNextClick(timeout: TimeInterval) -> CGPoint? {
+    let mask = CGEventMask(1 << CGEventType.leftMouseDown.rawValue)
+    var captured = CGPoint.zero
+
+    let callback: CGEventTapCallBack = { _, _, event, refcon in
+        let ptr = refcon!.assumingMemoryBound(to: CGPoint.self)
+        ptr.pointee = event.location
+        CFRunLoopStop(CFRunLoopGetCurrent())
+        return nil // swallow the click so the underlying UI doesn't fire
+    }
+
+    return withUnsafeMutablePointer(to: &captured) { ptr -> CGPoint? in
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: callback,
+            userInfo: UnsafeMutableRawPointer(ptr)
+        ) else {
+            return nil
+        }
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .defaultMode)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        defer {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .defaultMode)
+        }
+        let result = CFRunLoopRunInMode(.defaultMode, timeout, false)
+        return result == .stopped ? ptr.pointee : nil
+    }
 }
 
 switch command {
@@ -81,11 +121,21 @@ case "element-at":
     guard let x = Float(xStr), let y = Float(yStr) else {
         exitError("Invalid coordinates: x=\(xStr), y=\(yStr)")
     }
-    if let element = elementAtPoint(x: x, y: y) {
+    let depth = Int(getFlag(args, "--depth") ?? "3") ?? 3
+    if let element = elementAtPoint(x: x, y: y, maxDepth: depth) {
         outputJSON(element)
     } else {
         exitError("No element found at (\(xStr), \(yStr))")
     }
+
+case "pick":
+    let timeout = TimeInterval(getFlag(args, "--timeout") ?? "30") ?? 30
+    let depth = Int(getFlag(args, "--depth") ?? "3") ?? 3
+    guard let point = waitForNextClick(timeout: timeout) else {
+        exitError("Timed out after \(Int(timeout))s waiting for click (or failed to create event tap — check Accessibility permission)")
+    }
+    let element = elementAtPoint(x: Float(point.x), y: Float(point.y), maxDepth: depth)
+    outputJSON(PickResultJSON(x: Double(point.x), y: Double(point.y), element: element))
 
 case "perform-action":
     let pidStr = requireFlag(args, "--pid")
@@ -166,5 +216,5 @@ case "drag":
     outputJSON(["success": true])
 
 default:
-    exitError("Unknown command: \(command)\n\nCommands: list-windows, tree, find, element-at, perform-action, click, right-click, move, drag")
+    exitError("Unknown command: \(command)\n\nCommands: list-windows, tree, find, element-at, pick, perform-action, click, right-click, move, drag")
 }

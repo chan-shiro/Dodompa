@@ -92,91 +92,17 @@ app.whenReady().then(() => {
     })
 
     try {
-      // Wait for the user's next click using a Python/Quartz one-shot listener
-      const { execFile: execFileCb } = await import('child_process')
-      const { promisify } = await import('util')
-      const execFileAsync = promisify(execFileCb)
-
-      const pyScript = `
-import Quartz
-import json
-import sys
-
-def wait_for_click():
-    """Wait for the next mouse-down event and return its coordinates."""
-    tap = Quartz.CGEventTapCreate(
-        Quartz.kCGSessionEventTap,
-        Quartz.kCGHeadInsertEventTap,
-        Quartz.kCGEventTapOptionListenOnly,
-        Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown),
-        lambda proxy, type, event, refcon: None,
-        None
-    )
-    if not tap:
-        print(json.dumps({"error": "Failed to create event tap"}))
-        sys.exit(1)
-
-    source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
-    loop = Quartz.CFRunLoopGetCurrent()
-    Quartz.CFRunLoopAddSource(loop, source, Quartz.kCFRunLoopDefaultMode)
-    Quartz.CGEventTapEnable(tap, True)
-
-    # Run loop until we get one event
-    class State:
-        got_event = False
-        x = 0
-        y = 0
-
-    def callback(proxy, type, event, refcon):
-        loc = Quartz.CGEventGetLocation(event)
-        State.x = loc.x
-        State.y = loc.y
-        State.got_event = True
-        Quartz.CFRunLoopStop(loop)
-        return None
-
-    # Re-create tap with actual callback
-    Quartz.CGEventTapEnable(tap, False)
-    Quartz.CFRunLoopRemoveSource(loop, source, Quartz.kCFRunLoopDefaultMode)
-
-    tap2 = Quartz.CGEventTapCreate(
-        Quartz.kCGSessionEventTap,
-        Quartz.kCGHeadInsertEventTap,
-        Quartz.kCGEventTapOptionListenOnly,
-        Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown),
-        callback,
-        None
-    )
-    source2 = Quartz.CFMachPortCreateRunLoopSource(None, tap2, 0)
-    Quartz.CFRunLoopAddSource(loop, source2, Quartz.kCFRunLoopDefaultMode)
-    Quartz.CGEventTapEnable(tap2, True)
-
-    Quartz.CFRunLoopRunInMode(Quartz.kCFRunLoopDefaultMode, 30.0, False)
-
-    if State.got_event:
-        print(json.dumps({"x": State.x, "y": State.y}))
-    else:
-        print(json.dumps({"error": "timeout"}))
-
-wait_for_click()
-`
-      const { stdout } = await execFileAsync('python3', ['-c', pyScript], { timeout: 35000 })
-      const clickResult = JSON.parse(stdout.trim())
-
-      if (clickResult.error) {
-        win.webContents.send('element-picker:result', {
-          element: null, point: { x: 0, y: 0 },
-          error: clickResult.error,
-        })
-        return
-      }
-
-      const point = { x: Math.round(clickResult.x), y: Math.round(clickResult.y) }
+      const { pickElement } = await import('./desktop/mac/axBridge')
       const { createDesktopContext } = await import('./desktop/platform')
-      const ctx = await createDesktopContext()
-      const element = await ctx.elementAtPoint(point.x, point.y)
+
+      // Wait for the next click; the dodompa-ax binary swallows it so the
+      // underlying app doesn't fire (avoids accidentally hitting Send/Delete).
+      const result = await pickElement(30)
+      const point = { x: Math.round(result.x), y: Math.round(result.y) }
+      const element = result.element
 
       // Find the window at click position
+      const ctx = await createDesktopContext()
       const windows = await ctx.getWindows()
       const containsCursor = (w: typeof windows[0]) => {
         if (!w.bounds) return false

@@ -218,14 +218,50 @@ private func searchTree(element: AXUIElement, path: String, role: String, title:
     }
 }
 
-func elementAtPoint(x: Float, y: Float) -> AXNodeJSON? {
+// Walk up via kAXParentAttribute to compute the element's pid-relative index path
+// (e.g. "0.0.2.1") that matches the format emitted by getTree/buildNode. This
+// makes the returned node usable with performAction and getSubtree(--path).
+// Returns "0" (the app root) if the element can't be located in its parent chain
+// — typically because the tree changed between the parent walk and the children
+// re-fetch, which is rare but possible.
+private func computeAXPath(for element: AXUIElement) -> String {
+    var pid: pid_t = 0
+    guard AXUIElementGetPid(element, &pid) == .success else { return "0" }
+    let appRoot = AXUIElementCreateApplication(pid)
+    if CFEqual(element, appRoot) { return "0" }
+
+    var chain: [AXUIElement] = [element]
+    var current = element
+    while true {
+        var parentRef: AnyObject?
+        let r = AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parentRef)
+        guard r == .success, let pRef = parentRef else { break }
+        let parent = pRef as! AXUIElement
+        if CFEqual(parent, appRoot) { break }
+        chain.append(parent)
+        current = parent
+    }
+    chain.reverse()
+
+    var indices: [Int] = []
+    var parent = appRoot
+    for el in chain {
+        let children = axChildren(parent)
+        guard let idx = children.firstIndex(where: { CFEqual($0, el) }) else { return "0" }
+        indices.append(idx)
+        parent = el
+    }
+    return "0" + indices.map { ".\($0)" }.joined()
+}
+
+func elementAtPoint(x: Float, y: Float, maxDepth: Int = 3) -> AXNodeJSON? {
     let systemWide = AXUIElementCreateSystemWide()
     var element: AXUIElement?
     let result = AXUIElementCopyElementAtPosition(systemWide, x, y, &element)
     guard result == .success, let el = element else { return nil }
 
-    // Try to determine a reasonable path - we don't know the full hierarchy, use "0"
-    return buildNode(element: el, path: "0", depth: 0, maxDepth: 0)
+    let path = computeAXPath(for: el)
+    return buildNode(element: el, path: path, depth: 0, maxDepth: maxDepth)
 }
 
 func performAction(pid: pid_t, path: String, action: String) throws {

@@ -82,8 +82,8 @@ export async function generateCodeFromResolvedActions(
         ? `  ★ Keyboard input required: use desktop.type(${a.text} ?? ''). Do NOT click UI buttons one-by-one.`
         : ra.resolvedDesktop
           ? ra.resolvedDesktop.found
-            ? `  Element (verified): ${ra.resolvedDesktop.axRole} "${ra.resolvedDesktop.axTitle}"${ra.resolvedDesktop.path ? ` path=${ra.resolvedDesktop.path}` : ''}${ra.resolvedDesktop.position ? ` @ (${ra.resolvedDesktop.position.x}, ${ra.resolvedDesktop.position.y})` : ''}${ra.resolvedDesktop.pid ? ` pid=${ra.resolvedDesktop.pid}` : ''}`
-            : `  Element: unresolved — findElement with axRole="${a.axRole}" axTitle="${a.axTitle ?? ''}" returned nothing. ${candidateLine ? 'Pick a close match from the candidates below at runtime, or write a helper that tries multiple candidates in order.' : 'Try multiple axTitle values inside the code.'}${candidateLine}`
+            ? `  Element (verified): ${ra.resolvedDesktop.axRole} "${ra.resolvedDesktop.axTitle}"${ra.resolvedDesktop.axValue ? ` value="${ra.resolvedDesktop.axValue}"` : ''}${ra.resolvedDesktop.path ? ` path=${ra.resolvedDesktop.path}` : ''}${ra.resolvedDesktop.position ? ` @ (${ra.resolvedDesktop.position.x}, ${ra.resolvedDesktop.position.y})` : ''}${ra.resolvedDesktop.pid ? ` pid=${ra.resolvedDesktop.pid}` : ''}`
+            : `  Element: unresolved — findElement with axRole="${a.axRole}" axTitle="${a.axTitle ?? ''}"${a.axValue ? ` axValue="${a.axValue}"` : ''} returned nothing. ${candidateLine ? 'Pick a close match from the candidates below at runtime, or write a helper that tries multiple candidates in order.' : 'Try multiple axTitle values inside the code.'}${candidateLine}`
           : ''
       const appInfo = a.app ? `  App: ${a.app}` : ''
       const textInfo = (!isCtxInputAction && a.text) ? `  Text: ${a.text}` : ''
@@ -969,7 +969,7 @@ Writing \`tell application "X" to make new ...\` for an app with no dictionary f
 ### ❌ Apps where AppleScript is NOT the primary approach
 - **Electron / Chromium-based apps**: Slack, Discord, Notion, Figma, VS Code, Cursor, Zoom, Obsidian, Linear, Spotify, Claude Desktop, etc.
   → \`tell application "Slack" to activate\` is fine, but for data operations use AX tree + keyboard shortcuts + clipboard paste
-- **Native apps without a dictionary**: the AI cannot know this in advance. For apps not on the allowlist, do not use AppleScript — use AX tree + keyboard routes
+- **Native apps without a dictionary** (Calculator, SwiftUI apps, most third-party native apps): For these, **do not use AppleScript at all** — including the \`tell process "X"\` via System Events fallback. System Events is just AX wrapped in fragile positional syntax (\`static text 1 of group 1 of window 1\`) that breaks the moment the app reorganizes its layout. Modern SwiftUI apps deeply nest content inside many AXGroup/AXSplitGroup wrappers, so positional paths almost always misfire. Use \`desktop.getAccessibilityTree()\` + \`findElement\` directly.
 - **Mac App Store / iOS-derived sandboxed apps**: AppleScript is likely refused with -1743
 
 ### Usage examples (allowlisted apps only)
@@ -1006,6 +1006,36 @@ await exec('osascript', ['-e', script], { timeout: 10000 });
 - Fixed UI buttons inside an app → AX tree + performAction
 - Text-input forms → desktop.type() (after focusing via AX tree)
 - Operations inside a WebView → AX tree or keyboard
+- **Reading displayed text/values from non-allowlist apps** → AX tree only (\`getAccessibilityTree\` + \`findElement\` + read \`.value\` / \`.children[0].value\`). **Do NOT** wrap a System Events \`tell process "X" → value of static text N of group M of window 1\` for this — it's the same AX backend in fragile string form
+
+### Anti-pattern: reading display values via \`tell process "X"\` (System Events)
+For non-allowlist apps (Calculator, SwiftUI apps, etc.), **never** do this:
+\`\`\`typescript
+// ❌ Wrong — positional AppleScript path that breaks on layout changes,
+// and parses string output (you re-implement type/encoding on every call)
+const script = \`tell application "System Events"
+  tell process "Calculator"
+    return value of static text 1 of group 1 of window 1
+  end tell
+end tell\`;
+const { stdout } = await exec('osascript', ['-e', script]);
+\`\`\`
+
+Do this instead:
+\`\`\`typescript
+// ✅ Right — direct AX tree, structure-agnostic, returns typed data
+const tree = await desktop.getAccessibilityTree(pid);
+// findElement matches title against title OR description, so "Edit field"
+// hits the AXScrollArea whose description="Edit field"
+const editField = desktop.findElement(tree, { role: 'AXScrollArea', title: 'Edit field' });
+const display = editField?.children?.find(c => c.role === 'AXStaticText');
+const raw = display?.value ?? '';
+// macOS prepends bidi marks (U+200E LRM / U+200F RLM) to numeric values —
+// strip them before parsing, otherwise /^\\d/ regex tests will fail.
+const result = raw.replace(/[\\u200e\\u200f]/g, '').trim();
+\`\`\`
+
+The reason: \`tell process\` via System Events resolves through the same \`AXUIElementCopyAttributeValue\` API as the AX tree, but adds (a) a subprocess + string parsing round-trip, (b) brittle positional paths, (c) loss of structured data, (d) silent traps from invisible bidi characters. There is no robustness gain to compensate.
 
 ## ★★★ Messaging-app desktop strategy (general) ★★★
 General strategy for operating messaging apps (chat, email, communication tools) on the desktop:

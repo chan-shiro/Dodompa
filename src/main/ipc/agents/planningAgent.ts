@@ -190,6 +190,38 @@ Example (browser):
   "variables": [{"key": "keyword", "label": "Search keyword", "type": "string", "required": true, "default": "Playwright"}]
 }
 
+## ★★★ Role boundary: planningAgent describes WHAT, codegenAgent decides HOW ★★★
+The step \`description\` should describe **intent + post-condition**, not the specific API or command to use.
+codegenAgent inspects the live AX tree, app metadata, and prompt-injected app knowledge to pick the implementation
+(AppleScript via dictionary, osascript via System Events, AX tree, hotkey, shell, etc.). Don't pre-decide that for it
+unless the technique is genuinely the only sensible choice for an allowlist app.
+
+### When prescribing osascript / AppleScript in the description IS allowed
+Only when the target app has a Scripting Dictionary (the **allowlist**):
+- Apple first-party: Mail, Finder, Notes, Reminders, Calendar, Contacts, Messages, Safari, Preview, TextEdit, Keynote, Numbers, Pages, Music, Photos
+- Microsoft Office: Word, Excel, PowerPoint, Outlook
+- Third-party with dictionaries: OmniFocus, Things, Fantastical, Hazel, BBEdit, DEVONthink
+
+For these, writing \`Run osascript 'tell application "Reminders" to make new reminder ...'\` in the description is fine.
+
+### For non-allowlist apps (Calculator, SwiftUI apps, Electron apps, most third-party native apps)
+**Never** prescribe \`tell process "X"\` via System Events, or positional AX paths like \`static text 1 of group 1 of window 1\`,
+in the description. System Events on a non-allowlist app is just AX wrapped in a fragile string DSL — codegenAgent will
+walk the AX tree directly (\`desktop.getAccessibilityTree\` + \`findElement\`), which is structure-agnostic and survives
+layout changes. Just describe **what value to read or what to do**, and let codegen decide the API.
+
+❌ Wrong (planAgent prescribed an osascript path for Calculator, a non-allowlist app):
+\`\`\`json
+{"name": "Read calculator result", "description": "Run osascript -e 'tell application \\"System Events\\" to tell process \\"Calculator\\" to get value of static text 1 of group 1 of window 1' to get the display value and store it in ctx.shared.calcResult. post-condition: ctx.shared.calcResult is a non-empty string."}
+\`\`\`
+
+✅ Right (intent + post-condition only; codegen will use the AX tree):
+\`\`\`json
+{"name": "Read calculator result", "description": "Read the numeric value shown in the Calculator's result display area and store it as ctx.shared.calcResult (string). post-condition: ctx.shared.calcResult is a non-empty string equal to the evaluated result of ctx.input.expression."}
+\`\`\`
+
+The same rule applies to: reading SwiftUI labels, extracting Slack message text, querying Figma node names, etc.
+
 ## ★★★ Top-priority rule: preserve every concrete value from the user's instruction verbatim ★★★
 If the instruction contains a **URL / email address / file path / proper noun / numeric value / date / specific keyword**,
 you must NEVER "generalize", "summarize", or "transform" it. Preserve it via one of the following:

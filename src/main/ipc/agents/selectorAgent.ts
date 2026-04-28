@@ -26,6 +26,10 @@ export interface ActionPlan {
   elementType?: string
   axRole?: string
   axTitle?: string
+  // Match against the AX `value` attribute. Use this for display-only elements
+  // whose visible text lives on `value` rather than `title`/`description`
+  // (e.g. Calculator's result area: title=null, description=null, value="40,626").
+  axValue?: string
   app?: string
   text?: string
   keys?: string[]
@@ -39,6 +43,7 @@ export interface ActionPlan {
 export interface ResolvedDesktopElement {
   axRole: string
   axTitle: string
+  axValue?: string
   path?: string
   position?: { x: number; y: number }
   pid?: number
@@ -321,7 +326,9 @@ export async function resolveDesktopActions(
   })
 
   for (const action of actions) {
-    if (!action.axRole || action.action === 'open_app' || action.action === 'shell'
+    // Skip element resolution if neither axRole nor axValue is provided, or if
+    // the action type doesn't target a UI element.
+    if ((!action.axRole && !action.axValue) || action.action === 'open_app' || action.action === 'shell'
         || action.action === 'type_text' || action.action === 'hotkey'
         || action.action === 'press_key' || action.action === 'click_position'
         || action.action === 'wait' || action.action === 'activate_app') {
@@ -333,16 +340,17 @@ export async function resolveDesktopActions(
       phase: 'selector',
       stepIndex,
       stepName,
-      message: `🔍 Resolving desktop element: ${action.description} (${action.axRole}: "${action.axTitle ?? ''}")`,
+      message: `🔍 Resolving desktop element: ${action.description} (${action.axRole ?? ''}: title="${action.axTitle ?? ''}" value="${action.axValue ?? ''}")`,
       messageCode: 'selector.resolvingDesktopElement',
-      messageParams: { description: action.description, axRole: action.axRole, axTitle: action.axTitle ?? '' },
+      messageParams: { description: action.description, axRole: action.axRole ?? '', axTitle: action.axTitle ?? '' },
     })
 
     try {
       const windows = await desktopCtx.getWindows()
-      const query: { role?: string; title?: string } = {}
+      const query: { role?: string; title?: string; value?: string } = {}
       if (action.axRole) query.role = action.axRole
       if (action.axTitle) query.title = action.axTitle
+      if (action.axValue) query.value = action.axValue
 
       const pidsToSearch: number[] = []
       // Priority 1: Target PID from analyzing phase (most reliable)
@@ -405,6 +413,7 @@ export async function resolveDesktopActions(
         const desktopEl: ResolvedDesktopElement = {
           axRole: element.role ?? action.axRole ?? '',
           axTitle: resolvedTitle,
+          axValue: element.value ?? action.axValue ?? undefined,
           path: element.path,
           position: centerPos,
           pid: usedPid,
@@ -447,9 +456,9 @@ export async function resolveDesktopActions(
           phase: 'selector',
           stepIndex,
           stepName,
-          message: `⚠️ Desktop element unresolved: ${action.description} (${action.axRole}: "${action.axTitle ?? ''}")${candText}`,
+          message: `⚠️ Desktop element unresolved: ${action.description} (${action.axRole ?? ''}: title="${action.axTitle ?? ''}" value="${action.axValue ?? ''}")${candText}`,
           messageCode: candidates.length > 0 ? 'selector.unresolvedDesktopCandidates' : 'selector.unresolvedDesktop',
-          messageParams: { description: action.description, axRole: action.axRole, axTitle: action.axTitle ?? '', candidates: candidates.slice(0, 6).map(c => c.axTitle || c.description || '(no title)'), remainingCount: candidates.length > 6 ? candidates.length - 6 : 0 },
+          messageParams: { description: action.description, axRole: action.axRole ?? '', axTitle: action.axTitle ?? '', candidates: candidates.slice(0, 6).map(c => c.axTitle || c.description || '(no title)'), remainingCount: candidates.length > 6 ? candidates.length - 6 : 0 },
         }, JSON.stringify({ candidates, searchedPid: fallbackPidForCandidates }, null, 2))
         resolved.push({
           action,

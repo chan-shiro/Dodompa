@@ -277,6 +277,7 @@ Return **only** the following JSON (no prose):
     {"action": "activate_app", "app": "AppName", "description": "Bring the app to the foreground"},
     {"action": "click_element", "description": "Click the 7 button", "axRole": "AXButton", "axTitle": "7"},
     {"action": "click_element", "description": "Click the + button", "axRole": "AXButton", "axTitle": "+"},
+    {"action": "click_element", "description": "Focus the calc result display", "axRole": "AXStaticText", "axValue": "40,626"},
     {"action": "type_text", "text": "Hello World", "description": "Type text"},
     {"action": "hotkey", "keys": ["command", "s"], "description": "Save"},
     {"action": "press_key", "key": "Return", "description": "Press Enter"},
@@ -324,6 +325,14 @@ For the subsequent actions (search input, etc.), make the description explicit t
 - Elements not in the list are not available. Check the list before writing anything
 - Use "type_text" for text input, "hotkey" for keyboard shortcuts, "press_key" for a single key
 - One action per operation only
+
+## When to use axValue instead of axTitle
+Some elements have their visible text on the AX **value** attribute, not on title/description.
+The "Available elements" list shows this as \`axValue="..."\` next to \`axRole="..."\`.
+Examples: Calculator's result display, AXTextField current contents, AXSlider current numeric value.
+- If the element line shows \`axValue="..."\`, use **axValue** (not axTitle) to target it: \`{"action": "click_element", "axRole": "AXStaticText", "axValue": "40,626"}\`
+- Substring match: a partial axValue is fine (e.g. axValue: "40,626" matches a value like "‎40,626" with hidden bidi marks)
+- You may combine axRole + axTitle + axValue when needed; the resolver uses all of them as filters
 
 ## Important: value genericity
 - Do not hard-code user-specific values in the text field

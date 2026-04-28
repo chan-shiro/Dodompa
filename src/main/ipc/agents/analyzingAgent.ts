@@ -491,9 +491,14 @@ export function formatAxTreeForAi(
 
   if (shouldPrint) {
     parts.push(formatAxNodeLine(node, indent))
-    if (node.path && ((node.actions?.length ?? 0) > 0 || node.title || node.description)) {
+    if (node.path && ((node.actions?.length ?? 0) > 0 || node.title || node.description || node.value)) {
       const label = node.title || node.description || ''
-      parts.push(`${indent}  → axRole="${role}" axTitle="${label}"`)
+      // Strip bidi marks (U+200E LRM / U+200F RLM) from value — they're invisible
+      // and would just confuse the model if echoed verbatim. Substring matching
+      // on the runtime side still works because value.includes(query) is used.
+      const valueClean = node.value ? String(node.value).replace(/[‎‏]/g, '').slice(0, 80) : ''
+      const valueAttr = valueClean ? ` axValue="${valueClean}"` : ''
+      parts.push(`${indent}  → axRole="${role}" axTitle="${label}"${valueAttr}`)
     }
   }
 

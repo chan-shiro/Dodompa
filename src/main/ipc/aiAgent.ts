@@ -1220,7 +1220,7 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
             const prevCache = new Map<string, ResolvedAction>()
             for (const ra of prevResolvedActions) {
               if (ra.resolvedDesktop?.found) {
-                const key = `${ra.action.axRole ?? ''}:${ra.action.axTitle ?? ''}`
+                const key = `${ra.action.axRole ?? ''}:${ra.action.axTitle ?? ''}:${ra.action.axValue ?? ''}`
                 prevCache.set(key, ra)
               }
             }
@@ -1229,8 +1229,8 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
             const reusable: ResolvedAction[] = []
             const needResolve: typeof planResult2.actions = []
             for (const action of planResult2.actions) {
-              if (action.axRole) {
-                const key = `${action.axRole}:${action.axTitle ?? ''}`
+              if (action.axRole || action.axValue) {
+                const key = `${action.axRole ?? ''}:${action.axTitle ?? ''}:${action.axValue ?? ''}`
                 const cached = prevCache.get(key)
                 if (cached) {
                   reusable.push({ action, resolvedDesktop: cached.resolvedDesktop })
@@ -1262,11 +1262,11 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
               // Merge: maintain original order
               const newCache = new Map<string, ResolvedAction>()
               for (const ra of newlyResolved) {
-                const key = `${ra.action.axRole ?? ''}:${ra.action.axTitle ?? ''}`
+                const key = `${ra.action.axRole ?? ''}:${ra.action.axTitle ?? ''}:${ra.action.axValue ?? ''}`
                 newCache.set(key, ra)
               }
               resolvedActions = planResult2.actions.map(action => {
-                const key = `${action.axRole ?? ''}:${action.axTitle ?? ''}`
+                const key = `${action.axRole ?? ''}:${action.axTitle ?? ''}:${action.axValue ?? ''}`
                 const cached = prevCache.get(key)
                 if (cached) return { action, resolvedDesktop: cached.resolvedDesktop }
                 const fresh = newCache.get(key)

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import type { TaskDefinition, StepMeta, StepProgressEvent } from '../lib/types'
+import type { TaskDefinition, StepMeta, StepProgressEvent, AXNode } from '../lib/types'
 import * as api from '../lib/api'
 import { useCompositionGuard } from '../lib/hooks'
 import StepCard from '../components/StepCard'
@@ -1191,8 +1191,28 @@ export default function TaskDetail() {
                 onClick={() => {
                   const el = pickedElement.element
                   if (!el) return
-                  const text = `role: ${el.role}\ntitle: ${el.title}\npath: ${el.path}\nposition: (${el.position?.x}, ${el.position?.y})\nsize: ${el.size?.width}x${el.size?.height}\napp: ${pickedElement.app}\npid: ${pickedElement.pid}`
-                  navigator.clipboard.writeText(text)
+                  const lines: string[] = [
+                    `role: ${el.role}`,
+                    `title: ${el.title ?? '(none)'}`,
+                    `value: ${el.value ?? '(none)'}`,
+                    `description: ${el.description ?? '(none)'}`,
+                    `path: ${el.path}`,
+                    `position: (${el.position?.x}, ${el.position?.y})`,
+                    `size: ${el.size?.width}x${el.size?.height}`,
+                    `app: ${pickedElement.app}`,
+                    `pid: ${pickedElement.pid}`,
+                    `actions: ${el.actions.join(', ') || '(none)'}`,
+                  ]
+                  if (el.children && el.children.length > 0) {
+                    lines.push('children:')
+                    const walk = (n: AXNode, indent: string): void => {
+                      const label = n.title ?? n.value ?? n.description ?? ''
+                      lines.push(`${indent}- ${n.role}${label ? ` "${label}"` : ''} [${n.path}]`)
+                      for (const c of n.children ?? []) walk(c, indent + '  ')
+                    }
+                    for (const c of el.children) walk(c, '  ')
+                  }
+                  navigator.clipboard.writeText(lines.join('\n'))
                 }}
                 className="px-1.5 py-0.5 text-[10px] text-notion-text-muted hover:bg-notion-hover rounded"
               >
@@ -1234,6 +1254,12 @@ export default function TaskDetail() {
                     <span className="font-mono truncate">{pickedElement.element.value}</span>
                   </div>
                 )}
+                {pickedElement.element.description && (
+                  <div className="flex gap-2">
+                    <span className="text-notion-text-muted w-12 shrink-0">Desc:</span>
+                    <span className="font-mono truncate">{pickedElement.element.description}</span>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <span className="text-notion-text-muted w-12 shrink-0">Pos:</span>
                   <span className="font-mono">({pickedElement.element.position?.x}, {pickedElement.element.position?.y}) {pickedElement.element.size?.width}x{pickedElement.element.size?.height}</span>
@@ -1246,6 +1272,23 @@ export default function TaskDetail() {
                   <div className="flex gap-2">
                     <span className="text-notion-text-muted w-12 shrink-0">Actions:</span>
                     <span className="font-mono text-[10px]">{pickedElement.element.actions.join(', ')}</span>
+                  </div>
+                )}
+                {pickedElement.element.children && pickedElement.element.children.length > 0 && (
+                  <div className="pt-1 border-t border-notion-border mt-1">
+                    <div className="text-notion-text-muted mb-1">Children ({pickedElement.element.children.length}):</div>
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+                      {pickedElement.element.children.map((c, i) => {
+                        const label = c.title ?? c.value ?? c.description
+                        return (
+                          <div key={i} className="font-mono text-[10px] flex gap-1.5 items-baseline">
+                            <span className="text-blue-600 shrink-0">{c.role}</span>
+                            {label && <span className="truncate text-notion-text-primary">"{label}"</span>}
+                            <span className="text-notion-text-muted ml-auto shrink-0">{c.path}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </>

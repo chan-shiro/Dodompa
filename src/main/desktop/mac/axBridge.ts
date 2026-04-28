@@ -51,6 +51,20 @@ export async function elementAtPoint(x: number, y: number): Promise<AXNode | nul
   }
 }
 
+export interface PickResult {
+  x: number
+  y: number
+  element: AXNode | null
+}
+
+// Wait for the user's next left-click and return its coords + the AX element at that point.
+// The click is intercepted (does NOT propagate to the underlying app) so an inspector pick
+// can't accidentally trigger destructive actions like Send/Delete buttons.
+export async function pickElement(timeoutSec = 30): Promise<PickResult> {
+  const json = await runAx(['pick', '--timeout', String(timeoutSec)], (timeoutSec + 5) * 1000)
+  return JSON.parse(json)
+}
+
 export async function performAction(pid: number, elementPath: string, action: string): Promise<void> {
   await runAx(['perform-action', '--pid', String(pid), '--path', elementPath, '--action', action])
 }

@@ -7,6 +7,7 @@ import type { AiProviderConfig, StablePriorStep, StepPlan, VariableDefinition } 
 import { chatStream } from './aiChat'
 import { sendAndLog } from './progressHelper'
 import { renderKnowledgeBlock } from '../../knowledge'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 /**
  * Render the existing-stable-steps context block that gets injected into the
@@ -77,6 +78,7 @@ This system is **macOS only**. You must **never**:
 - Ask the user which platform to execute on
 
 Every step and every question must assume macOS. Even when the instruction is ambiguous, do not ask about the OS — pick the most natural macOS-native approach.
+${buildRuntimeContext()}
 ${goal ? `
 ## ★★★ Final deliverable / goal of this task ★★★
 The ultimate goal of this task:

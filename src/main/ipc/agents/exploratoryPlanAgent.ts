@@ -16,6 +16,7 @@ import { sendAndLog } from './progressHelper'
 import { scanBrowserPage, deriveUrlPatterns } from './reconAgent'
 import type { SiteMapRawFacts } from './reconAgent'
 import { renderKnowledgeBlock } from '../../knowledge'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 // ──────────────────────────────────────────────────────────────
 // Types
@@ -259,6 +260,7 @@ function buildSystemPrompt(
 
   return `You are an "exploratory planner".
 Given the user's task instruction and final goal, you explore the actual website or app first, then plan accurate execution steps.
+${buildRuntimeContext()}
 
 ## Your role
 1. See the real structure of the site with your own eyes

@@ -9,6 +9,7 @@ import { chatStream } from './aiChat'
 import { sendProgress, sendAndLog } from './progressHelper'
 import type { SiteMap } from './reconAgent'
 import { formatSiteMapForPrompt } from './reconAgent'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 // ── Helpers for ctx.shared visibility and variable-task warnings ──
 
@@ -64,7 +65,7 @@ export async function generateActionPlan(
   selectorMap: string,
   pageHtml: string,
   existingCodes: string[],
-  errorHistory: Array<{ attempt: number; error: string; selectors: string[] }>,
+  errorHistory: Array<{ attempt: number; error: string; selectors: string[]; logs?: string[] }>,
   detectedAppName?: string,
   launchName?: string,
   previousStepResults?: StepResult[],
@@ -75,7 +76,12 @@ export async function generateActionPlan(
   taskVariables?: Array<{ key: string; label?: string; default?: string }>,
 ): Promise<ActionPlanResult> {
   const errorHistoryText = errorHistory.length > 0
-    ? `\n\n## Past failures (these approaches already failed — do not reuse them)\n${errorHistory.map(h => `Attempt ${h.attempt}: ${h.error}\nSelectors tried: ${h.selectors.join(', ')}`).join('\n')}`
+    ? `\n\n## Past failures (these approaches already failed — do not reuse them)\n${errorHistory.map(h => {
+        const logsBlock = h.logs && h.logs.length > 0
+          ? `\nConsole output that failing run produced — read carefully, it shows what the previous code actually observed:\n\`\`\`\n${h.logs.slice(0, 30).map(l => l.length > 200 ? l.slice(0, 200) + '…' : l).join('\n')}\n\`\`\``
+          : ''
+        return `Attempt ${h.attempt}: ${h.error}\nSelectors tried: ${h.selectors.join(', ')}${logsBlock}`
+      }).join('\n\n')}`
     : ''
 
   const ledgerText = strategyLedgerText && strategyLedgerText.trim().length > 0
@@ -188,6 +194,7 @@ export async function generateActionPlan(
 
 function getDesktopActionPlanSystemPrompt(): string {
   return `You are an action planner for macOS desktop automation.
+${buildRuntimeContext()}
 
 ## ★★★ Role boundary: you handle "strategy", codegen handles "implementation" ★★★
 This system runs as a two-stage pipeline (actionPlan → codegen). The roles are strictly separated:
@@ -499,6 +506,7 @@ Only ask the user for things AI cannot infer (which app to use, which URL, etc.)
 function getBrowserActionPlanSystemPrompt(): string {
   return `You are an action planner for web automation.
 Read the step instruction and identify the actions to execute on the page.
+${buildRuntimeContext()}
 
 ## ★★★ Role boundary: you handle "strategy", codegen handles "implementation" ★★★
 This system runs as a two-stage pipeline (actionPlan → codegen). The roles are strictly separated:

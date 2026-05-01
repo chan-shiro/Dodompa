@@ -41,7 +41,7 @@ export type {
 export { matchTargetWindow } from './windowMatchAgent'
 export type { WindowMatchResult } from './windowMatchAgent'
 export { generateCodeFromResolvedActions, generateCodeFallback } from './codegenAgent'
-export { verifyStepExecution } from './verifyAgent'
+export { verifyStepExecution, programmaticVerify, extractPostCondition } from './verifyAgent'
 export { replanStep } from './replanAgent'
 export type { ReplanDecision } from './replanAgent'
 export {
@@ -66,6 +66,7 @@ export { patchStepCode, patchStepCodeForRunner, applyPatches, parsePatches } fro
 export type { CodePatch } from './patchCodeAgent'
 export {
   diagnoseFailure,
+  refineDiagnosisWithAi,
   suggestUntriedStrategies,
   describeAttemptedStrategy,
   formatLedgerForPrompt,
@@ -75,4 +76,5 @@ export type {
   FailureDiagnosis,
   StrategyAttempt,
   StrategyLedger,
+  DiagnosisRefinementContext,
 } from './failureDiagnosis'

@@ -10,7 +10,10 @@
 //   ledger, the AI can be instructed explicitly: "strategies X, Y were
 //   tried and failed for reason Z — pick something from the untried list".
 
+import type { AiProviderConfig } from '../../../shared/types'
 import type { ResolvedAction, ActionPlan } from './selectorAgent'
+import { chatNonStream } from './aiChat'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 // ─── Categories of failure ───
 
@@ -574,6 +577,171 @@ export function diagnoseFailure(input: DiagnoseInput): FailureDiagnosis {
     rawError,
     evidence: [rawError.split('\n')[0]],
     hypothesis: 'Error classification unknown. Careful reading of rawError is needed for reclassification.',
+  }
+}
+
+// ─── AI-driven diagnosis refinement ───
+
+/**
+ * Categories whose deterministic hypothesis is already specific enough that
+ * sending tokens to the AI for refinement is wasteful (the AI mostly just
+ * paraphrases what we already concluded).
+ */
+const CATEGORIES_NOT_WORTH_AI_REFINEMENT: ReadonlySet<FailureCategory> = new Set([
+  'ambiguous_input',          // already pinpoints "ctx.input.X has no default"
+  'code_compile_error',       // syntax error — read the rawError; AI rarely adds value
+  'code_validation_failed',   // shape problem in the AI's own output
+])
+
+export interface DiagnosisRefinementContext {
+  stepDescription: string
+  /** Code that ran (or failed to compile). Truncated by the caller is fine. */
+  code?: string
+  /** Console output captured during the failing run — most valuable signal. */
+  executionLogs?: string[]
+  /** Snapshot of ctx.shared after the failing run — shows what data the code
+   *  actually produced (e.g. an empty array vs. a missing key). */
+  executionShared?: Record<string, unknown>
+  /** Verifier's natural-language reason when stage was 'verify'. */
+  verifyReason?: string
+  /** Browser URL or desktop app name when relevant. */
+  pageUrl?: string
+  stepType: 'browser' | 'desktop'
+  /** Hypotheses the deterministic stage already produced for *prior* attempts.
+   *  Useful so the AI can say "you tried X and Y, both failed for the same
+   *  underlying reason Z" instead of repeating the same theory. */
+  priorHypotheses?: Array<{ attempt: number; hypothesis: string }>
+}
+
+/**
+ * Refine a deterministic FailureDiagnosis with an AI call. Replaces the
+ * generic templated hypothesis (e.g. "Suspect: incorrect click target,
+ * wrong branch in conditional logic, or wrong target window") with a
+ * specific theory grounded in the captured runtime evidence.
+ *
+ * Returns a *new* diagnosis (immutable update); on failure or skip,
+ * returns the input unchanged.
+ *
+ * Costs ~2-5s and one AI call per failed step. Skipped for categories
+ * already specific deterministically.
+ */
+export async function refineDiagnosisWithAi(
+  config: AiProviderConfig,
+  diag: FailureDiagnosis,
+  ctx: DiagnosisRefinementContext,
+): Promise<FailureDiagnosis> {
+  if (CATEGORIES_NOT_WORTH_AI_REFINEMENT.has(diag.category)) return diag
+
+  // No evidence to refine FROM — bail. Keeps the cost down on cancellations
+  // and on first-attempt failures where the runtime didn't get far enough
+  // to log anything useful.
+  const hasLogs = (ctx.executionLogs?.length ?? 0) > 0
+  const hasShared = ctx.executionShared && Object.keys(ctx.executionShared).length > 0
+  const hasVerify = !!ctx.verifyReason
+  if (!hasLogs && !hasShared && !hasVerify) return diag
+
+  const logsBlock = (() => {
+    if (!ctx.executionLogs?.length) return ''
+    let body = ctx.executionLogs.join('\n')
+    const MAX = 3000
+    if (body.length > MAX) {
+      body = body.slice(0, MAX / 2) + `\n… [snip ${body.length - MAX} chars] …\n` + body.slice(-MAX / 2)
+    }
+    return `\n\n## Console output captured during the failing run\n\`\`\`\n${body}\n\`\`\``
+  })()
+
+  const sharedBlock = (() => {
+    if (!hasShared) return ''
+    let serialized: string
+    try {
+      serialized = JSON.stringify(ctx.executionShared, null, 2)
+    } catch {
+      return ''
+    }
+    if (serialized.length > 1500) serialized = serialized.slice(0, 1500) + '\n… [truncated]'
+    return `\n\n## ctx.shared after the failing run\n\`\`\`json\n${serialized}\n\`\`\``
+  })()
+
+  const codeBlock = (() => {
+    if (!ctx.code) return ''
+    let snippet = ctx.code
+    const MAX = 3500
+    if (snippet.length > MAX) {
+      snippet = snippet.slice(0, MAX / 2) + '\n// … [snip] …\n' + snippet.slice(-MAX / 2)
+    }
+    return `\n\n## Code that ran\n\`\`\`typescript\n${snippet}\n\`\`\``
+  })()
+
+  const priorBlock = (() => {
+    if (!ctx.priorHypotheses?.length) return ''
+    return `\n\n## Hypotheses from previous attempts\n${ctx.priorHypotheses.map(h => `- Attempt ${h.attempt}: ${h.hypothesis}`).join('\n')}\nIf the same underlying issue is showing up across attempts, name it directly so the next retry doesn't keep churning on cosmetic variations.`
+  })()
+
+  const verifyBlock = ctx.verifyReason
+    ? `\n\n## Verifier's reason for marking this a failure\n${ctx.verifyReason}`
+    : ''
+
+  const stepBlock = `\n\n## Step description (includes the post-condition the code was supposed to satisfy)\n${ctx.stepDescription}`
+  const urlBlock = ctx.pageUrl ? `\n\n## Page URL / context\n${ctx.pageUrl}` : ''
+
+  const messages = [
+    {
+      role: 'system' as const,
+      content: `You are a failure-diagnosis agent for an AI-native RPA pipeline. A generated step has just failed. Your job is to read the **runtime evidence** (console output, ctx.shared snapshot, code, verifier reason) and produce a **specific, evidence-grounded hypothesis** about why it failed — sharp enough that the next retry can fix it on the first try.
+${buildRuntimeContext()}
+
+## What "specific" means
+- ❌ Bad: "Suspect: incorrect click target, wrong branch in conditional logic, or wrong target window."
+- ❌ Bad: "The code did not satisfy the post-condition."
+- ✅ Good: "Logs show 'freeAnchorCount: 14' and 'No-match free anchor text: \\"〇\\"'. The regex was matched against \`a.textContent\` (which is just '〇' because the anchor wraps only the marker), not against \`cell.textContent\` which holds the time-range string. Fix: switch the regex source to the surrounding cell's textContent."
+- ✅ Good: "ctx.shared.availableSlots is an empty array, but the recon site map shows 12 free cells in the table. Logs say 'Tables found: 4' and 'Day block index: -1'. The day-block detection looked for a \`<th rowspan=>\` containing '06/29' but the date cell label rendered as '06/29(月)' (with weekday suffix) — the substring search failed because of locale formatting."
+
+## Output format (required)
+Return ONLY this JSON, no prose around it:
+
+{
+  "hypothesis": "1-3 sentence specific theory grounded in the evidence. Name the exact line / log / shared-key / branch involved.",
+  "evidence": ["short bullet 1", "short bullet 2", "..."]
+}
+
+## Rules
+- Cite specific log lines or ctx.shared values when you have them ("Logs say 'X: 0'", "ctx.shared.foo is undefined").
+- If the evidence is genuinely insufficient to say more than the deterministic hypothesis already does, say so plainly: hypothesis = "Insufficient evidence: <what's missing>". Don't invent.
+- Prefer naming the **wrong assumption** (e.g. "code assumed cell text was empty, but logs show it contains '〇 ...'"), not just the surface symptom.
+- Keep evidence to ≤6 short bullets, each citing concrete data.
+- Do not propose a fix in this output — diagnosis only. The retry pipeline will plan the fix separately.`,
+    },
+    {
+      role: 'user' as const,
+      content: `## Failure category (deterministic classification)
+${diag.category} @ ${diag.where}
+
+## Raw error
+${(diag.rawError || '').slice(0, 1500)}${verifyBlock}${stepBlock}${urlBlock}${sharedBlock}${logsBlock}${codeBlock}${priorBlock}`,
+    },
+  ]
+
+  try {
+    const result = await chatNonStream(config, messages)
+    const text = result.text
+    const jsonMatch = text.match(/```json\s*\n?([\s\S]*?)```/)
+      ?? text.match(/(\{[\s\S]*"hypothesis"[\s\S]*\})/)
+    if (!jsonMatch) return diag
+    const jsonStr = jsonMatch[1] || jsonMatch[0]
+    const parsed = JSON.parse(jsonStr) as { hypothesis?: unknown; evidence?: unknown }
+    const newHypothesis = typeof parsed.hypothesis === 'string' ? parsed.hypothesis.trim() : ''
+    if (!newHypothesis) return diag
+    const newEvidence = Array.isArray(parsed.evidence)
+      ? parsed.evidence.filter((e): e is string => typeof e === 'string').slice(0, 8)
+      : []
+    return {
+      ...diag,
+      hypothesis: newHypothesis,
+      evidence: [...diag.evidence, ...newEvidence],
+    }
+  } catch {
+    // AI refinement is best-effort — never block retry on it.
+    return diag
   }
 }
 

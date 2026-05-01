@@ -11,6 +11,7 @@ import { formatSiteMapForPrompt } from './reconAgent'
 import { chatStream } from './aiChat'
 import { sendProgress, sendAndLog } from './progressHelper'
 import { renderKnowledgeBlock } from '../../knowledge'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 // Rule to proactively prevent **common build errors** in generated code.
 // Gemini-family models tend to write triple backticks inside template literals,
@@ -36,6 +37,47 @@ It is tempting to write "return JSON — no Markdown code blocks" in a prompt yo
 - **Do not write Markdown fence notation ( \`\`\` ) inside prompt strings.** Describing them as "Markdown code block" / "code fence" in prose is enough
 - To display \${ literally inside a template string, escape it as \\\${
 - Regex literals (/.../) must not contain newlines or unterminated backticks. For complex cases, use new RegExp('...')`
+
+// Generated step code reads cleaner and breaks less often when it does **one
+// thing** rather than piling fallback strategies, defensive try/catch, and
+// diagnostic dumps on top of each other. Long code is also harder to patch on
+// retry — patches end up duplicating declarations or missing edits in
+// dead-code branches. This rule is shared across every codegen prompt.
+const MINIMAL_CODE_RULE = `## ★★★ Write the minimum code that does the job ★★★
+Generated step code should express the **single approach** that's most likely to work given the recon evidence and selectors you were handed. It is **not** a defensive resilience layer.
+
+### Do
+- Pick **one** way to obtain each piece of data and use it. If recon shows the cell text already encodes everything you need, parse the text — don't *also* walk colspan totals as a fallback "just in case".
+- Add \`console.log\` only at decision points (counts, key text, branch taken). These logs are read on retry; verbose dumps drown out the signal.
+- Throw with a specific message when a precondition isn't met (e.g. \`throw new Error(\\\`No tables match the date \${dateLabel}\\\`)\`). One throw beats five layers of \`if (!x) return\`.
+
+### Don't
+- Don't write multiple parsing strategies in series ("try header-aligned, fall back to anchor-scan, fall back to regex over textContent…"). Pick one.
+- Don't wrap every line in try/catch. Let unexpected exceptions surface — the retry loop diagnoses them.
+- Don't dump entire DOM trees / HTML snippets into \`console.log\`. Log a summary (counts, the first matched row, the chosen branch) — at most ~20 lines per run.
+- Don't add code paths for "what if recon is wrong" speculation. If the structural assumption from recon turns out wrong, the verifier will catch it and the next retry will adjust.
+
+### On retry (when "Past failures" is non-empty)
+- **Replace** the failing approach with a *different* approach. Do **not** keep the old approach and bolt the new one onto it as a fallback — that's how step files grow from 1500 chars to 14000 chars and stop being patchable.
+- The captured console output from the previous run tells you exactly which assumption was wrong. Read it. Address that specific assumption. Don't second-guess unrelated parts of the code.
+
+## ★★★ Never filter results to satisfy a post-condition's field-shape ★★★
+When the planner's post-condition prescribes a specific shape for a field (e.g. \`"reservationUrl beginning with https://yoyaku.labola.jp/"\`, \`"price as a numeric string"\`, \`"dateIso in YYYY-MM-DD format"\`) and the runtime data **doesn't satisfy it**, do NOT silently drop those entries with \`continue\` / \`if (!x.startsWith(...)) skip\`. Filtering everything out yields an empty result array, which fails verification *and* hides the real cause from the next retry.
+
+### Why this rule exists
+A real failure mode: the planner asked for \`reservationUrl: starts with https://...\`, but the live DOM shows the cells are click-handler-only (no \`href\` at all). The codegen wrote \`if (!href || !href.startsWith('https://...')) continue;\` to be defensive, and got 0 entries despite 45 free cells being detected. The next retry's diagnosis then has to re-discover the same fact from scratch — and often misses it because the empty array obscures the original 45-cell extraction.
+
+### What to do instead
+1. **Push the entry anyway** with whatever value IS available — empty string for missing href, the original ISO string for unparseable date, etc.
+2. **Surface the discrepancy with \`console.warn\`** so the next layer can see it: \`console.warn(\\\`Post-condition expected reservationUrl https://..., but cell has no anchor; storing empty string. \${freeCells.length} cells found total.\\\`)\`. This goes into captured logs and the diagnosis / patch agent reads it.
+3. If absolutely nothing usable can be extracted (e.g. every cell genuinely has no parseable text), throw with a specific message naming what was missing — don't return empty silently.
+
+### Decision rule
+- "Was the data found?" → if yes, push it (even if a sub-field is empty / wrong shape).
+- "Does the sub-field match the planner's literal format?" → not your concern; the verifier will judge the array shape, and a non-empty array with imperfect fields beats an empty array every time.
+
+The same rule applies to type checks (\`typeof x !== 'string'\`), enum checks (\`if (!ALLOWED.includes(x))\`), and length checks (\`if (x.length < N)\`) — defensive validations on extracted data must NOT cause empty results when raw data exists.
+`
 
 function buildVariablesSection(variables?: VariableDefinition[]): string {
   if (!variables || variables.length === 0) return ''
@@ -222,7 +264,7 @@ export async function generateCodeFallback(
   selectorMap: string,
   pageHtml: string,
   existingCodes: string[],
-  errorHistory: Array<{ attempt: number; error: string }>,
+  errorHistory: Array<{ attempt: number; error: string; logs?: string[] }>,
   stepType: 'browser' | 'desktop' = 'browser',
   taskId?: string,
   taskVariables?: VariableDefinition[],
@@ -257,7 +299,12 @@ export async function generateCodeFallback(
         ...(selectorMap ? [{ type: 'text' as const, text: `## Available elements (accessibility tree)\n${selectorMap}` }] : []),
         ...(pageHtml ? [{ type: 'text' as const, text: `## Accessibility tree (JSON excerpt)\n${pageHtml.slice(0, 6000)}` }] : []),
         ...prevStepCtxFallback,
-        ...(errorHistory.length > 0 ? [{ type: 'text', text: `## Past failures (avoid the same approach)\n${errorHistory.map(h => `Attempt ${h.attempt}: ${h.error}`).join('\n\n')}` }] : []),
+        ...(errorHistory.length > 0 ? [{ type: 'text' as const, text: `## Past failures (avoid the same approach)\n${errorHistory.map(h => {
+          const logsBlock = h.logs && h.logs.length > 0
+            ? `\n  Console output the failed run produced (read this carefully — it shows what the code actually saw):\n  \`\`\`\n  ${h.logs.slice(0, 30).map(l => l.length > 200 ? l.slice(0, 200) + '…' : l).join('\n  ')}\n  \`\`\``
+            : ''
+          return `Attempt ${h.attempt}: ${h.error}${logsBlock}`
+        }).join('\n\n')}` }] : []),
         ...(strategyLedgerText ? [{ type: 'text' as const, text: strategyLedgerText }] : []),
         ...(existingCodes.length > 0 ? [{ type: 'text', text: `## Code from previous steps (for reference)\n${existingCodes.slice(-2).join('\n---\n')}` }] : []),
         ...(taskVariables?.length ? [{ type: 'text' as const, text: `## Task input parameters (reference as ctx.input.KEY)${buildVariablesSection(taskVariables)}` }] : []),
@@ -269,7 +316,12 @@ export async function generateCodeFallback(
         ...(siteMap ? [{ type: 'text' as const, text: formatSiteMapForPrompt(siteMap) }] : []),
         { type: 'text', text: `## Current page URL\n${pageUrl}\n\n## Page HTML (excerpt)\n${pageHtml.slice(0, 6000)}` },
         ...prevStepCtxFallback,
-        ...(errorHistory.length > 0 ? [{ type: 'text', text: `## Past failures (avoid the same approach)\n${errorHistory.map(h => `Attempt ${h.attempt}: ${h.error}`).join('\n\n')}` }] : []),
+        ...(errorHistory.length > 0 ? [{ type: 'text' as const, text: `## Past failures (avoid the same approach)\n${errorHistory.map(h => {
+          const logsBlock = h.logs && h.logs.length > 0
+            ? `\n  Console output the failed run produced (read this carefully — it shows what the code actually saw):\n  \`\`\`\n  ${h.logs.slice(0, 30).map(l => l.length > 200 ? l.slice(0, 200) + '…' : l).join('\n  ')}\n  \`\`\``
+            : ''
+          return `Attempt ${h.attempt}: ${h.error}${logsBlock}`
+        }).join('\n\n')}` }] : []),
         ...(strategyLedgerText ? [{ type: 'text' as const, text: strategyLedgerText }] : []),
         ...(existingCodes.length > 0 ? [{ type: 'text', text: `## Code from previous steps (for reference)\n${existingCodes.slice(-2).join('\n---\n')}` }] : []),
         ...(taskVariables?.length ? [{ type: 'text' as const, text: `## Task input parameters (reference as ctx.input.KEY)${buildVariablesSection(taskVariables)}` }] : []),
@@ -510,7 +562,7 @@ function validateAndPatchQuickSwitcher(code: string): string {
 
 function getDesktopCodegenPrompt(): string {
   return `You are an expert who generates TypeScript code for macOS desktop automation.
-
+${buildRuntimeContext()}
 ## ★★★ Target platform: macOS only ★★★
 The code you generate is **macOS only**. Never write code for Windows / Linux / WSL:
 - Do not branch on OS via \`process.platform\` (always assume macOS)
@@ -1172,12 +1224,14 @@ const input = desktop.findElement(tree, { role: 'AXTextArea' });
 
 ${TEMPLATE_LITERAL_RULE}
 
+${MINIMAL_CODE_RULE}
+
 ## No required-check on ctx.input: never write validations like if (!ctx.input.xxx) throw / if (!ctx.input.xxx) return. If a value is not provided, use a default: const val = ctx.input.expression ?? ''`
 }
 
 function getBrowserCodegenPrompt(): string {
   return `You are an expert who generates Playwright TypeScript code.
-
+${buildRuntimeContext()}
 ## ESM required: require() is forbidden
 This code runs in ESM (ES Modules). **require() is not available**.
 - ❌ \`const fs = require('fs')\` → error: require is not defined
@@ -1226,6 +1280,8 @@ await page.getByRole('searchbox').fill(searchQuery.trim());
 ## No required-check on ctx.input: never write validations like if (!ctx.input.xxx) throw / if (!ctx.input.xxx) return. If a value is not provided, use a default: const val = ctx.input.keyword ?? ''
 
 ${TEMPLATE_LITERAL_RULE}
+
+${MINIMAL_CODE_RULE}
 
 ## ★ SPA (Single Page Application) waiting rules
 SPAs take time to load.
@@ -1315,7 +1371,7 @@ if (pdfLinks.length > 0 && htmlText.length < 500) {
 
 function getDesktopFallbackPrompt(): string {
   return `You are an expert who generates TypeScript code for macOS desktop automation.
-
+${buildRuntimeContext()}
 ## ★★★ Target platform: macOS only ★★★
 The code you generate is **macOS only**. Never write code for Windows / Linux / WSL:
 - Do not branch on OS via \`process.platform\` (always assume macOS)
@@ -1694,12 +1750,14 @@ await desktop.click(clickX, clickY);
 
 ${TEMPLATE_LITERAL_RULE}
 
+${MINIMAL_CODE_RULE}
+
 ## No required-check on ctx.input: never write validations like if (!ctx.input.xxx) throw / if (!ctx.input.xxx) return. If a value is not provided, use a default: const val = ctx.input.expression ?? ''`
 }
 
 function getBrowserFallbackPrompt(): string {
   return `You are an expert who generates Playwright TypeScript code.
-
+${buildRuntimeContext()}
 ## Output format
 \`\`\`typescript
 import type { Page, BrowserContext } from 'playwright-core';
@@ -1715,6 +1773,8 @@ export const meta = { description: string, retryable: boolean, timeout: number }
 ## No required-check on ctx.input: never write validations like if (!ctx.input.xxx) throw / if (!ctx.input.xxx) return. If a value is not provided, use a default: const val = ctx.input.keyword ?? ''
 
 ${TEMPLATE_LITERAL_RULE}
+
+${MINIMAL_CODE_RULE}
 
 ## ★ SPA (Single Page Application) waiting rules
 SPAs take time to load.

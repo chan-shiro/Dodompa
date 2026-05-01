@@ -47,6 +47,9 @@ import {
   verifyStepExecution,
   replanStep,
   diagnoseFailure,
+  refineDiagnosisWithAi,
+  programmaticVerify,
+  extractPostCondition,
   suggestUntriedStrategies,
   describeAttemptedStrategy,
   formatLedgerForPrompt,
@@ -58,6 +61,7 @@ import type { ResolvedAction, FailureDiagnosis, StrategyAttempt, SiteMap } from 
 import { shouldUseExploratoryPlanning, exploratoryPlan } from './agents/exploratoryPlanAgent'
 import { createDesktopContext } from '../desktop/platform'
 import { chatNonStream } from './agents/aiChat'
+import { buildRuntimeContext } from './agents/buildRuntimeContext'
 
 const MAX_FIX_RETRIES = 3
 
@@ -234,6 +238,60 @@ async function askUser(
 // ─── Login wait mechanism ───
 
 const pendingLoginResolvers = new Map<string, () => void>()
+
+/**
+ * Heuristic assessment of whether the current page is already in a
+ * logged-in state, based on recon-derived link/button text. We use this
+ * to skip the manual-login prompt when the persistent profile already has
+ * a valid session — otherwise users get nagged for login on every fresh
+ * generation even when the cookie is still good.
+ *
+ * Returns:
+ *   - 'logged-in'  — strong positive signal (a logout/account/mypage entry).
+ *   - 'logged-out' — strong negative signal (a prominent login/sign-in link).
+ *   - 'unknown'    — neither signal; caller falls back to the safer choice
+ *                    (currently: prompt for login).
+ *
+ * Intentionally conservative: only trips 'logged-in' when wording is
+ * unambiguous. Words like "プロフィール" / "Profile" are ignored because
+ * shop-info pages reuse them for non-user-account purposes.
+ */
+function assessLoginState(siteMap: SiteMap | null): 'logged-in' | 'logged-out' | 'unknown' {
+  if (!siteMap) return 'unknown'
+  const items: string[] = []
+  for (const l of siteMap.nav ?? []) items.push(l.text)
+  for (const l of siteMap.links ?? []) items.push(l.text)
+  for (const b of siteMap.buttons ?? []) items.push(b.text)
+  if (items.length === 0) return 'unknown'
+
+  // Strong "I am authenticated" indicators. These appear only when a user
+  // session is active.
+  const loggedInRe = /(?:ログアウト|サインアウト|\blog[\s-]*out\b|\bsign[\s-]*out\b|マイページ|アカウント設定|account\s*settings|my\s*account)/i
+
+  // Strong "you are not authenticated" indicators. We require fairly
+  // specific wording to avoid catching unrelated nav like "ログイン履歴".
+  const loggedOutRe = /(?:メンバーログイン|会員ログイン|ユーザーログイン|ログインはこちら|^ログイン$|^サインイン$|^login$|^sign[\s-]*in$|create\s*account|新規登録|会員登録)/i
+
+  let loggedInHit = false
+  let loggedOutHit = false
+  for (const t of items) {
+    const trimmed = t.trim()
+    if (!trimmed) continue
+    if (loggedInRe.test(trimmed)) loggedInHit = true
+    if (loggedOutRe.test(trimmed)) loggedOutHit = true
+  }
+
+  // When both fire, prefer 'logged-out' — many sites keep a "Sign out" link
+  // visible in the user menu but ALSO expose a "Sign in" link in the public
+  // header for SEO. Catching 'logged-out' here would over-prompt; catching
+  // 'logged-in' would under-prompt and likely run the step against an
+  // unauthenticated page. Picking 'logged-out' (the conservative side) is
+  // safer because the worst case is one extra prompt the user can cancel,
+  // vs. running real automation against the wrong session.
+  if (loggedInHit && !loggedOutHit) return 'logged-in'
+  if (loggedOutHit) return 'logged-out'
+  return 'unknown'
+}
 
 async function waitForUserLogin(
   win: BrowserWindow | null,
@@ -589,7 +647,7 @@ async function runAutonomousGeneration(
               role: 'system',
               content: `You are an assistant that generates test values for task automation.
 For a test run of the user's task, propose **one realistic, concrete test value** for the variable.
-
+${buildRuntimeContext()}
 Rules:
 - Return only the value (no explanation, no quotation marks, no surrounding whitespace)
 - Use a realistic, real-world-looking value (no placeholder / fake test data)
@@ -597,7 +655,7 @@ Rules:
 - For URLs, use a real URL
 - For person names, use a common name (Japanese for Japanese tasks, English for English tasks)
 - For zodiac signs, use the language matching the task (e.g. おひつじ座 for Japanese)
-- For dates, use YYYY-MM-DD format`,
+- For dates, use YYYY-MM-DD format. Resolve relative phrases ("today", "tomorrow", "next Monday", "in N days") against the runtime context above before emitting the value`,
             },
             {
               role: 'user',
@@ -732,15 +790,31 @@ Return exactly one test value for this variable.`,
           // Clear module cache for re-import
           const stepModule0 = await import(/* @vite-ignore */ fileUrl0 + `?t=${Date.now()}`)
           const timeout0 = stepModule0.meta?.timeout ?? 30000
-          await raceWithAbort(taskId, Promise.race([
+          const captured0 = await raceWithAbort(taskId, runStepWithLogs(() => Promise.race([
             stepType0 === 'desktop'
               ? stepModule0.run(desktopCtx, { profile: {}, input: executionInput, shared: executionShared, ai: createStepAiHelper() })
               : stepModule0.run(page!, context, { profile: {}, input: executionInput, shared: executionShared, ai: createStepAiHelper() }),
-            new Promise((_, reject) =>
+            new Promise<void>((_, reject) =>
               setTimeout(() => reject(new Error(`Timed out after ${timeout0}ms`)), timeout0)
             ),
-          ]))
+          ])))
+          if (captured0.error) throw captured0.error
           try { fs.unlinkSync(compiledPath0) } catch { /* ignore */ }
+
+          // Programmatic post-condition check on the existing code's output.
+          // Without this, a step whose code catches every error internally
+          // (e.g. a per-item loop that records {success:false, error:...})
+          // completes without throwing → pre-check declares it stable →
+          // the same broken code is reused on every regen, never triggering
+          // a fresh pipeline. Treat a programmatic verify failure here the
+          // same as a thrown error so we fall through to real codegen.
+          const preCheckPostCondition = extractPostCondition(stepPlan.description)
+          if (preCheckPostCondition) {
+            const preCheckVerify = programmaticVerify(preCheckPostCondition, executionShared, task.goal)
+            if (preCheckVerify.checked && !preCheckVerify.success) {
+              throw new Error(`Existing code ran but post-condition failed: ${preCheckVerify.reason ?? 'unknown'}`)
+            }
+          }
 
           sendAndLog(win, taskId, {
             phase: 'executing',
@@ -826,6 +900,8 @@ Return exactly one test value for this variable.`,
       //   1. Already confirmed this run — same Playwright context, login is persistent
       //   2. Current URL is about:blank — no meaningful page to assess. Open the
       //      target URL first and let a subsequent step trigger login if needed.
+      //   3. Recon shows a clear logged-in signal (logout/mypage/etc. in
+      //      nav). The persistent profile already has a valid session.
       if (stepPlan.needsLogin && stepType !== 'desktop') {
         const currentUrl = page!.url()
         if (loginAlreadyConfirmedThisRun) {
@@ -845,7 +921,34 @@ Return exactly one test value for this variable.`,
           })
           // Fall through — step will try to navigate; if it hits a login wall,
           // the retry / replan pipeline will handle it.
+        } else if (assessLoginState(siteMap) === 'logged-in') {
+          // Recon found a logout / "my page" / "account settings" entry on
+          // this page — strong evidence the persistent profile is already
+          // authenticated. Skip the manual prompt and let the step's code
+          // handle any per-page auth check itself (e.g. an in-step `if
+          // (await page.locator('login form').count() > 0) ...` fallback).
+          sendAndLog(win, taskId, {
+            phase: 'executing',
+            stepIndex: i,
+            stepName: stepPlan.name,
+            message: `🔓 Recon shows a logged-in indicator on the page — skipping login prompt`,
+          })
+          loginAlreadyConfirmedThisRun = true
+          // Fall through to normal step generation
         } else {
+          // Manual-login prerequisite: prompt the user to sign in via the
+          // browser. After confirmation, fall through to normal step
+          // generation so the step's *actual* work (form fills, navigation,
+          // data extraction, screenshots, etc.) still gets generated and
+          // executed. `needsLogin: true` only signals "login must precede
+          // this step" — it does NOT mean "this step is just a login step".
+          //
+          // Previously this branch wrote a no-op file and `continue
+          // stepLoop`'d, which silently swallowed the entire step body when
+          // the planner combined "login + work" into a single step (which
+          // happens regularly: e.g. "navigate to each slot, login if shown,
+          // fill form, screenshot"). That made the run look successful but
+          // skipped the goal.
           page = await waitForUserLogin(win, taskId, context!, currentUrl)
           if (!activeGenerations.has(taskId)) {
             sendAndLog(win, taskId, { phase: 'error', message: '⛔ Generation was cancelled' })
@@ -859,27 +962,9 @@ Return exactly one test value for this variable.`,
             phase: 'executing',
             stepIndex: i,
             stepName: stepPlan.name,
-            message: `✅ Step ${i + 1}: user is logged in — skipping`,
+            message: `🔐 Manual login complete — continuing with step code generation`,
           })
-
-          const newStep: StepMeta = {
-            id: stepId, order: task.steps.length + i + 1, file: fileName,
-            description: `${stepPlan.description} (user logged in manually)`,
-            type: 'browser', status: 'stable',
-            lastSuccess: new Date().toISOString(), failCount: 0, aiRevisionCount: 0,
-            producedSharedKeys: [], // manual-login no-op does not write ctx.shared
-          }
-          const noopCode = `import type { Page, BrowserContext } from 'playwright-core';
-export interface StepContext { profile: Record<string, string>; input: Record<string, string>; shared: Record<string, unknown>; ai: (prompt: string) => Promise<string>; }
-export async function run(page: Page, _context: BrowserContext, _ctx: StepContext): Promise<void> {
-  await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
-}
-export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")} (user manual login)', retryable: false, timeout: 10000 };
-`
-          fs.writeFileSync(path.join(taskDir, fileName), noopCode)
-          task.steps.push(newStep)
-          writeTask(task)
-          continue stepLoop
+          // Fall through to normal step generation.
         }
       }
 
@@ -898,7 +983,7 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
         }
       }
 
-      const errorHistory: Array<{ attempt: number; error: string; selectors: string[]; codeSnippet: string }> = []
+      const errorHistory: Array<{ attempt: number; error: string; selectors: string[]; codeSnippet: string; logs?: string[] }> = []
       // ── Structured failure diagnosis + strategy ledger (carried across retries) ──
       const diagnosisHistory: FailureDiagnosis[] = []
       const triedStrategies: StrategyAttempt[] = []
@@ -972,6 +1057,13 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
 
         // ── Phase B-0: On retry, try patch-based fix first (much cheaper than full regen) ──
         if (retries > 0 && code) {
+          const siteMapText = stepType === 'browser' && siteMap
+            ? formatSiteMapForPrompt(siteMap)
+            : undefined
+          // Surface the most recent run's captured console output so the
+          // patch agent can read what the code actually saw rather than
+          // pattern-matching the error string.
+          const lastRunLogs = errorHistory.at(-1)?.logs
           const patchedCode = await patchStepCode(
             provider, win, taskId, stepPlan, i,
             code, lastError, stepType,
@@ -981,6 +1073,8 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
               diagnosisHistory,
             ),
             task.variables,
+            siteMapText,
+            lastRunLogs,
           )
           if (patchedCode) {
             // Patch succeeded — skip full pipeline, go straight to execution
@@ -1028,19 +1122,22 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
                 }
               } catch { /* */ }
 
+              let postPatchLogs: string[] = []
               try {
                 const compiledPath = await compileStep(patchedFilePath)
                 const fileUrl = new URL(`file://${compiledPath}`).href
                 const stepModule = await import(/* @vite-ignore */ fileUrl + `?t=${Date.now()}`)
                 const timeout = stepModule.meta?.timeout ?? 30000
-                await Promise.race([
+                const capturedPatch = await runStepWithLogs(() => Promise.race([
                   stepType === 'desktop'
                     ? stepModule.run(desktopCtx, { profile: {}, input: executionInput, shared: executionShared, ai: createStepAiHelper() })
                     : stepModule.run(page!, context, { profile: {}, input: executionInput, shared: executionShared, ai: createStepAiHelper() }),
-                  new Promise((_, reject) =>
+                  new Promise<void>((_, reject) =>
                     setTimeout(() => reject(new Error(`Timed out after ${timeout}ms`)), timeout)
                   ),
-                ])
+                ]))
+                postPatchLogs = capturedPatch.logs
+                if (capturedPatch.error) throw capturedPatch.error
                 try { fs.unlinkSync(compiledPath) } catch { /* */ }
 
                 let afterScreenshot = ''
@@ -1059,6 +1156,9 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
                   beforeScreenshot, afterScreenshot, stepType,
                   win, i, stepPlan.name, taskId,
                   { error: undefined },
+                  executionShared,
+                  task.goal,
+                  postPatchLogs,
                 )
 
                 if (verification.success) {
@@ -1070,10 +1170,17 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
                   })
                   break goto_execute
                 }
-                // Verification failed — will continue to full regen below
+                // Verification failed — record logs so the next iteration's
+                // patch agent sees what the patched code actually produced.
                 lastError = `AI verification failed: ${verification.reason ?? 'result mismatch'}`
+                if (postPatchLogs.length > 0) {
+                  errorHistory.push({ attempt: retries, error: lastError, selectors: extractSelectorsFromCode(code), codeSnippet: code, logs: postPatchLogs })
+                }
               } catch (err) {
                 lastError = (err as Error).message
+                if (postPatchLogs.length > 0) {
+                  errorHistory.push({ attempt: retries, error: lastError, selectors: extractSelectorsFromCode(code), codeSnippet: code, logs: postPatchLogs })
+                }
               }
               // Patch execution failed — fall through to full pipeline
               sendAndLog(win, taskId, {
@@ -1518,20 +1625,23 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
           }
         } catch { /* */ }
 
+        let stepLogs: string[] = []
         try {
           const compiledPath = await compileStep(stepFilePath)
           const fileUrl = new URL(`file://${compiledPath}`).href
           const stepModule = await import(/* @vite-ignore */ fileUrl)
 
           const timeout = stepModule.meta?.timeout ?? 30000
-          await raceWithAbort(taskId, Promise.race([
+          const captured = await raceWithAbort(taskId, runStepWithLogs(() => Promise.race([
             stepType === 'desktop'
               ? stepModule.run(desktopCtx, { profile: {}, input: executionInput, shared: executionShared, ai: createStepAiHelper() })
               : stepModule.run(page!, context, { profile: {}, input: executionInput, shared: executionShared, ai: createStepAiHelper() }),
-            new Promise((_, reject) =>
+            new Promise<void>((_, reject) =>
               setTimeout(() => reject(new Error(`Timed out after ${timeout}ms`)), timeout)
             ),
-          ]))
+          ])))
+          stepLogs = captured.logs
+          if (captured.error) throw captured.error
 
           try { fs.unlinkSync(compiledPath) } catch { /* */ }
 
@@ -1589,6 +1699,7 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
             { error: undefined },
             executionShared,
             task.goal,
+            stepLogs,
           )
 
           if (verification.success) {
@@ -1614,10 +1725,10 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
             retries++
 
             const attemptedSelectors = extractSelectorsFromCode(code)
-            errorHistory.push({ attempt: retries, error: lastError, selectors: attemptedSelectors, codeSnippet: code })
+            errorHistory.push({ attempt: retries, error: lastError, selectors: attemptedSelectors, codeSnippet: code, logs: stepLogs })
 
             // ── Structured diagnosis: verification failed ──
-            const diag = diagnoseFailure({
+            const baseDiag = diagnoseFailure({
               attempt: retries,
               rawError: lastError,
               stage: 'verify',
@@ -1625,6 +1736,25 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
               code,
               resolvedActions,
               stepType,
+            })
+            // Sharpen the templated "Suspect: incorrect click target..."
+            // hypothesis with an AI pass that reads the actual runtime
+            // evidence (logs + ctx.shared + verifier reason).
+            sendAndLog(win, taskId, {
+              phase: 'fixing',
+              stepIndex: i,
+              stepName: stepPlan.name,
+              message: `🔬 Refining diagnosis with runtime evidence...`,
+            })
+            const diag = await refineDiagnosisWithAi(provider, baseDiag, {
+              stepDescription: stepPlan.description,
+              code,
+              executionLogs: stepLogs,
+              executionShared,
+              verifyReason: verification.reason,
+              pageUrl: stepType === 'browser' ? page!.url() : undefined,
+              stepType,
+              priorHypotheses: diagnosisHistory.map(d => ({ attempt: d.attempt, hypothesis: d.hypothesis })),
             })
             diagnosisHistory.push(diag)
             triedStrategies.push({
@@ -1673,13 +1803,13 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
           retries++
 
           const attemptedSelectors = extractSelectorsFromCode(code)
-          errorHistory.push({ attempt: retries, error: lastError, selectors: attemptedSelectors, codeSnippet: code })
+          errorHistory.push({ attempt: retries, error: lastError, selectors: attemptedSelectors, codeSnippet: code, logs: stepLogs })
 
           // ── Structured diagnosis: runtime/compile error ──
           const stage: 'compile' | 'execute' =
             /cannot find module|esbuild|syntaxerror|module not found/i.test(lastError)
               ? 'compile' : 'execute'
-          const diag = diagnoseFailure({
+          const baseDiag = diagnoseFailure({
             attempt: retries,
             rawError: lastError,
             stage,
@@ -1687,6 +1817,29 @@ export const meta = { description: '${stepPlan.description.replace(/'/g, "\\'")}
             resolvedActions,
             stepType,
           })
+          // Sharpen ambiguous categories (step_timeout, unknown,
+          // element_not_found_runtime) with an AI pass over the runtime
+          // evidence. Compile-stage and locale-mismatch diagnoses already
+          // have specific hypotheses and are skipped inside the refinement.
+          if (stage === 'execute') {
+            sendAndLog(win, taskId, {
+              phase: 'fixing',
+              stepIndex: i,
+              stepName: stepPlan.name,
+              message: `🔬 Refining diagnosis with runtime evidence...`,
+            })
+          }
+          const diag = stage === 'execute'
+            ? await refineDiagnosisWithAi(provider, baseDiag, {
+                stepDescription: stepPlan.description,
+                code,
+                executionLogs: stepLogs,
+                executionShared,
+                pageUrl: stepType === 'browser' && page ? page.url() : undefined,
+                stepType,
+                priorHypotheses: diagnosisHistory.map(d => ({ attempt: d.attempt, hypothesis: d.hypothesis })),
+              })
+            : baseDiag
           diagnosisHistory.push(diag)
           triedStrategies.push({
             attempt: retries,
@@ -1983,6 +2136,83 @@ const activeGenerations = new Map<string, { cancel: () => void }>()
  * raced against stepModule.run() so in-flight step code is interrupted.
  */
 const activeAbortControllers = new Map<string, AbortController>()
+
+/**
+ * Run a step's `run()` while capturing every line written to console.{log,
+ * info, warn, error} into a string array. Restores the global console even
+ * on throw / timeout. The same capture is used to feed verifier, diagnosis,
+ * patch agent, and the next retry's prompt — without it, every layer is
+ * blind to what the generated code actually saw at runtime, and retries end
+ * up applying cosmetic changes to the wrong line.
+ *
+ * Caps:
+ *   - At most 200 captured lines (≈ pathological infinite-loop guard).
+ *   - Each line truncated to 600 chars.
+ *
+ * Caveat: console is global, so any *other* code that logs while the step
+ * is running gets captured too. In Dodompa generation is serial per task,
+ * so in practice only the step's own logs land here.
+ */
+async function runStepWithLogs<T>(fn: () => Promise<T>): Promise<{ logs: string[]; error: Error | null; result: T | null }> {
+  const logs: string[] = []
+  const MAX_LINES = 200
+  const MAX_LINE_LEN = 600
+
+  const formatArg = (a: unknown): string => {
+    if (typeof a === 'string') return a
+    if (a instanceof Error) return `${a.name}: ${a.message}`
+    try { return JSON.stringify(a) } catch { return String(a) }
+  }
+  const captureLine = (level: string, args: unknown[]): void => {
+    if (logs.length >= MAX_LINES) return
+    const text = args.map(formatArg).join(' ')
+    logs.push(`[${level}] ${text}`.slice(0, MAX_LINE_LEN))
+  }
+
+  const orig = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+    debug: console.debug,
+  }
+  console.log = (...args: unknown[]): void => { captureLine('log', args); orig.log.apply(console, args) }
+  console.info = (...args: unknown[]): void => { captureLine('info', args); orig.info.apply(console, args) }
+  console.warn = (...args: unknown[]): void => { captureLine('warn', args); orig.warn.apply(console, args) }
+  console.error = (...args: unknown[]): void => { captureLine('error', args); orig.error.apply(console, args) }
+  console.debug = (...args: unknown[]): void => { captureLine('debug', args); orig.debug.apply(console, args) }
+
+  let error: Error | null = null
+  let result: T | null = null
+  try {
+    result = await fn()
+  } catch (e) {
+    error = e as Error
+  } finally {
+    console.log = orig.log
+    console.info = orig.info
+    console.warn = orig.warn
+    console.error = orig.error
+    console.debug = orig.debug
+  }
+  return { logs, error, result }
+}
+
+/**
+ * Format captured console lines for inclusion in agent prompts. Returns an
+ * empty string when no logs were produced — the section is skipped entirely
+ * so we don't waste tokens telling the AI "(no output)".
+ */
+function formatLogsForPrompt(logs: string[] | undefined, header = 'Console output from the run'): string {
+  if (!logs || logs.length === 0) return ''
+  // Cap total size so very chatty steps don't blow the prompt budget.
+  let body = logs.join('\n')
+  const MAX = 4000
+  if (body.length > MAX) {
+    body = body.slice(0, MAX / 2) + `\n… [snip ${body.length - MAX} chars] …\n` + body.slice(-MAX / 2)
+  }
+  return `\n\n## ${header} (${logs.length} line${logs.length === 1 ? '' : 's'})\n\`\`\`\n${body}\n\`\`\``
+}
 
 /**
  * Race a long-running promise against the generation's abort signal so that

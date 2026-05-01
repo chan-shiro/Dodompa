@@ -28,6 +28,7 @@ import * as crypto from 'crypto'
 import type { AiProviderConfig, StepPlan } from '../../../shared/types'
 import { chatStream } from './aiChat'
 import { sendAndLog } from './progressHelper'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 // ──────────────────────────────────────────────────────────────
 // Types
@@ -71,6 +72,59 @@ export interface SiteMapHeading {
   text: string
 }
 
+/** A single cell in a captured table sample. */
+export interface SiteMapTableCell {
+  /** 'th' or 'td'. */
+  tag: 'th' | 'td'
+  /** Cell text (trimmed, capped). Empty when the cell only contains markup. */
+  text: string
+  /** Only set when > 1. */
+  rowspan?: number
+  /** Only set when > 1. */
+  colspan?: number
+  /** First inner anchor's raw `href` attribute, if any. Empty string ("") means
+   *  the anchor exists but has no real URL (typical for click-handler-only
+   *  buttons styled as links). Undefined means no anchor at all. */
+  href?: string
+  /** First inner anchor's textContent (snippet) when present and *different*
+   *  from the cell text. Lets the AI tell apart "the anchor wraps the whole
+   *  cell" (linkText absent) from "the anchor wraps just the marker, while
+   *  the time-range / labels live in surrounding spans" (linkText present
+   *  and short). */
+  linkText?: string
+  /** Compact descriptor of inner structural markers (e.g. "i.free", "img"). */
+  marker?: string
+  /** Only set on synthetic run-cells: collapses N consecutive structurally-empty
+   *  cells (no text, no spans, no marker, no anchor) into one entry to keep
+   *  long header rows readable without losing column-count information. */
+  emptyRun?: number
+}
+
+export interface SiteMapTableRow {
+  /** 'thead' / 'tbody' / 'tfoot' / 'tr' (when no section ancestor). */
+  section: 'thead' | 'tbody' | 'tfoot' | 'tr'
+  cells: SiteMapTableCell[]
+}
+
+/**
+ * A compact skeleton of a table — enough for an AI to infer how to extract
+ * data without re-discovering rowspan/colspan and prefix-column offsets.
+ */
+export interface SiteMapTable {
+  /** Total <tr> count. */
+  rowCount: number
+  /** Maximum number of <th>/<td> in any single <tr>. */
+  maxColCount: number
+  /** True when any cell has rowspan>1 or colspan>1. */
+  hasSpans: boolean
+  /** True when row cell counts vary (typically a side effect of spans). */
+  hasIrregularRows: boolean
+  /** Optional <caption> text or nearby labelling text. */
+  caption?: string
+  /** Sample of the first rows (capped). */
+  rows: SiteMapTableRow[]
+}
+
 /** Deterministic facts collected via page.evaluate — no AI involved. */
 export interface SiteMapRawFacts {
   url: string
@@ -85,9 +139,13 @@ export interface SiteMapRawFacts {
   standaloneInputs: SiteMapInput[]
   forms: SiteMapForm[]
   headings: SiteMapHeading[]
+  /** Up to N visible tables, each captured as a small skeleton. */
+  tables: SiteMapTable[]
   hasIframes: boolean
   linkCount: number
   buttonCount: number
+  /** Total <table> elements found on the page (regardless of capture cap). */
+  tableCount: number
 }
 
 /** Facts + AI-derived enrichment, cached to disk. */
@@ -142,6 +200,14 @@ interface DeepReconTriage {
 
 const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24h
 
+/**
+ * Bump when the shape of cached recon data changes — OR when the enricher
+ * prompt changes such that previously cached AI summaries would be misleading
+ * under the new prompt. Cached entries with a different (or missing) version
+ * are treated as stale and re-scanned on read.
+ */
+const RECON_CACHE_SCHEMA_VERSION = 4
+
 function reconCacheDir(): string {
   const dir = path.join(app.getPath('userData'), 'recon')
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -169,7 +235,12 @@ function readCache(url: string, ttlMs: number): SiteMap | null {
     const stat = fs.statSync(p)
     if (Date.now() - stat.mtimeMs > ttlMs) return null
     const raw = fs.readFileSync(p, 'utf-8')
-    return JSON.parse(raw) as SiteMap
+    const parsed = JSON.parse(raw) as SiteMap & { _v?: number }
+    // Reject entries from an older recon schema (missing fields the current
+    // pipeline expects, e.g. `tables`). Treating them as a miss forces a
+    // fresh scan instead of feeding partial data into prompts.
+    if (parsed._v !== RECON_CACHE_SCHEMA_VERSION) return null
+    return parsed
   } catch {
     return null
   }
@@ -178,7 +249,8 @@ function readCache(url: string, ttlMs: number): SiteMap | null {
 function writeCache(siteMap: SiteMap): void {
   try {
     const p = cachePathForUrl(siteMap.url)
-    fs.writeFileSync(p, JSON.stringify(siteMap, null, 2), 'utf-8')
+    const stamped = { ...siteMap, _v: RECON_CACHE_SCHEMA_VERSION }
+    fs.writeFileSync(p, JSON.stringify(stamped, null, 2), 'utf-8')
   } catch {
     // best effort — cache failures should never break generation
   }
@@ -363,6 +435,167 @@ export async function scanBrowserPage(page: Page): Promise<SiteMapRawFacts> {
       headings.push({ level: parseInt(h.tagName.slice(1), 10), text })
     }
 
+    // ── Tables ──
+    // Capture a compact skeleton of each visible table: cell tags, rowspan,
+    // colspan, sample text, anchor hrefs, and inner-marker classes. Without
+    // this, the AI plans table-extraction code by guessing — and gets the
+    // header-vs-body column offset wrong whenever the leading column has
+    // rowspan / different th/td prefix counts (calendar-style tables, group
+    // headers, etc.). With it, the AI can read the actual structure.
+    const TABLE_CAP = 5
+    const ROWS_PER_TABLE_CAP = 8
+    /** Max raw cells iterated per row. Generous so fine-grained headers (e.g.
+     *  5-minute sub-columns) don't get truncated before the time labels run out. */
+    const RAW_CELLS_PER_ROW_CAP = 400
+    /** Max emitted entries per row after empty-run compression. Bounds prompt
+     *  size for pathological tables (every cell unique, no runs to collapse). */
+    const EMITTED_CELLS_PER_ROW_CAP = 100
+    const allTableEls = Array.from(document.querySelectorAll('table'))
+    const tableCount = allTableEls.length
+    type CapturedCell = {
+      tag: 'th' | 'td'
+      text: string
+      rowspan?: number
+      colspan?: number
+      href?: string
+      linkText?: string
+      marker?: string
+      emptyRun?: number
+    }
+    const tables: Array<{
+      rowCount: number
+      maxColCount: number
+      hasSpans: boolean
+      hasIrregularRows: boolean
+      caption?: string
+      rows: Array<{
+        section: 'thead' | 'tbody' | 'tfoot' | 'tr'
+        cells: CapturedCell[]
+      }>
+    }> = []
+
+    const describeMarker = (cell: Element): string | undefined => {
+      // Compact descriptor of inner structural markers without dumping HTML.
+      // Looks for: <i class="...">, <img>, <input>, <svg>, <button>.
+      const parts: string[] = []
+      const innerEls = Array.from(cell.querySelectorAll('i, img, input, svg, button')).slice(0, 4)
+      for (const el of innerEls) {
+        const tag = el.tagName.toLowerCase()
+        const cls = (el.getAttribute('class') ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.')
+        parts.push(cls ? `${tag}.${cls}` : tag)
+        if (parts.length >= 3) break
+      }
+      return parts.length > 0 ? parts.join(',') : undefined
+    }
+
+    /** A "structurally empty" cell — no info-bearing content. Cells like this
+     *  show up in fine-grained header rows (5-min subdivisions used as filler
+     *  between 30-min labels). Collapsing runs of them into a single entry
+     *  preserves column-count information without spending tokens per cell. */
+    const isStructurallyEmpty = (c: CapturedCell): boolean =>
+      c.tag === 'td'
+      && !c.text
+      && !c.rowspan
+      && !c.colspan
+      && !c.href
+      && !c.linkText
+      && !c.marker
+
+    for (const table of allTableEls.slice(0, TABLE_CAP)) {
+      if (!isVisible(table)) continue
+      const allRows = Array.from(table.querySelectorAll('tr'))
+      if (allRows.length === 0) continue
+
+      const captionEl = table.querySelector('caption')
+      const caption = captionEl ? trim(captionEl.textContent, 80) : undefined
+
+      let maxColCount = 0
+      let hasSpans = false
+      let hasIrregularRows = false
+      let prevRowCellCount: number | null = null
+      const sampledRows: Array<{
+        section: 'thead' | 'tbody' | 'tfoot' | 'tr'
+        cells: CapturedCell[]
+      }> = []
+
+      for (let r = 0; r < allRows.length; r++) {
+        const tr = allRows[r]
+        const cellEls = Array.from(tr.querySelectorAll(':scope > th, :scope > td'))
+        if (prevRowCellCount !== null && cellEls.length !== prevRowCellCount) {
+          hasIrregularRows = true
+        }
+        prevRowCellCount = cellEls.length
+        if (cellEls.length > maxColCount) maxColCount = cellEls.length
+
+        if (sampledRows.length < ROWS_PER_TABLE_CAP) {
+          let section: 'thead' | 'tbody' | 'tfoot' | 'tr' = 'tr'
+          if (tr.closest('thead')) section = 'thead'
+          else if (tr.closest('tfoot')) section = 'tfoot'
+          else if (tr.closest('tbody')) section = 'tbody'
+
+          const cells: CapturedCell[] = []
+          let pendingEmpty = 0
+          const flushEmpty = (): void => {
+            if (pendingEmpty === 0) return
+            if (pendingEmpty <= 2) {
+              for (let k = 0; k < pendingEmpty; k++) cells.push({ tag: 'td', text: '' })
+            } else {
+              cells.push({ tag: 'td', text: '', emptyRun: pendingEmpty })
+            }
+            pendingEmpty = 0
+          }
+
+          for (const cell of cellEls.slice(0, RAW_CELLS_PER_ROW_CAP)) {
+            if (cells.length >= EMITTED_CELLS_PER_ROW_CAP) break
+            const tag = cell.tagName.toLowerCase() as 'th' | 'td'
+            const rowspanRaw = parseInt(cell.getAttribute('rowspan') ?? '1', 10)
+            const colspanRaw = parseInt(cell.getAttribute('colspan') ?? '1', 10)
+            const rowspan = Number.isFinite(rowspanRaw) && rowspanRaw > 1 ? rowspanRaw : undefined
+            const colspan = Number.isFinite(colspanRaw) && colspanRaw > 1 ? colspanRaw : undefined
+            if (rowspan || colspan) hasSpans = true
+
+            // Capture *any* anchor (href is optional — many sites use click-
+            // handler anchors with no real href, and we want to show that
+            // explicitly so the AI doesn't compose URLs out of empty strings).
+            const a = cell.querySelector('a') as HTMLAnchorElement | null
+            const hrefAttr = a?.getAttribute('href')
+            const href = a ? (hrefAttr ?? '') : undefined
+            const cellText = trim(cell.textContent, 30)
+            // Anchor's own text — only worth recording when it differs from
+            // the cell text. Same text → the anchor wraps the whole cell, no
+            // disambiguation needed. Different → anchor is partial; the AI
+            // should not assume `a.textContent` carries the cell-level info.
+            const linkRawText = a ? trim(a.textContent, 30) : ''
+            const linkText = a && linkRawText && linkRawText !== cellText ? linkRawText : undefined
+            const marker = describeMarker(cell)
+
+            const captured: CapturedCell = { tag, text: cellText, rowspan, colspan, href, linkText, marker }
+
+            if (isStructurallyEmpty(captured)) {
+              pendingEmpty++
+            } else {
+              flushEmpty()
+              cells.push(captured)
+            }
+          }
+          flushEmpty()
+
+          sampledRows.push({ section, cells })
+        }
+        // Even after we stop sampling, keep walking so we get accurate
+        // rowCount / maxColCount / hasSpans / hasIrregularRows.
+      }
+
+      tables.push({
+        rowCount: allRows.length,
+        maxColCount,
+        hasSpans,
+        hasIrregularRows,
+        caption,
+        rows: sampledRows,
+      })
+    }
+
     const url = location.href
     const urlObj = new URL(url)
     return {
@@ -378,6 +611,8 @@ export async function scanBrowserPage(page: Page): Promise<SiteMapRawFacts> {
       standaloneInputs,
       forms,
       headings,
+      tables,
+      tableCount,
       hasIframes: document.querySelectorAll('iframe').length > 0,
       linkCount: allAnchors.length,
       buttonCount: buttonEls.length,
@@ -499,12 +734,36 @@ async function enrichWithAi(
     })),
     headings: facts.headings.slice(0, 20),
     urlPatterns,
+    tableCount: facts.tableCount ?? (facts.tables?.length ?? 0),
+    tables: (facts.tables ?? []).map(t => ({
+      rowCount: t.rowCount,
+      maxColCount: t.maxColCount,
+      hasSpans: t.hasSpans,
+      hasIrregularRows: t.hasIrregularRows,
+      caption: t.caption,
+      // Compact each captured row into a one-line summary so token cost stays
+      // bounded but the AI still sees rowspan/colspan and prefix-column shape.
+      rows: t.rows.map(r => ({
+        section: r.section,
+        cells: r.cells.map(c => ({
+          tag: c.tag,
+          text: c.text || undefined,
+          rowspan: c.rowspan,
+          colspan: c.colspan,
+          href: c.href,
+          linkText: c.linkText,
+          marker: c.marker,
+          emptyRun: c.emptyRun,
+        })),
+      })),
+    })),
   }
 
   const messages = [
     {
       role: 'system',
       content: `You are a website recon agent. You receive a "fact sheet" already produced by a deterministic DOM scan, and the goal of the step you are about to achieve.
+${buildRuntimeContext()}
 
 Your tasks:
 1. Summarize the site structure in 2–4 sentences (summary). Mention URL patterns and repeated structures in particular.
@@ -532,6 +791,18 @@ Examples:
 
 DOM locator candidates (\`getByRole\`, \`locator\`, \`filter\`) must come **after** goto candidates.
 Use DOM candidates only for elements unreachable via goto (search button, form submission, modal, etc.).
+
+### Tables (when the goal involves reading tabular data)
+When the fact sheet's \`tables\` array is non-empty AND the goal is to extract / scrape / summarise / iterate rows of tabular data (calendars, schedules, listings, inventory, schedules, fixtures, search results in table form, etc.):
+- Mention in \`summary\` which table holds the relevant data and call out structural quirks visible in the captured rows — especially \`rowspan\` / \`colspan\`, header rows whose cell count differs from body rows, prefix columns (date / category / group label) that span multiple body rows, and any \`emptyRun\` of filler sub-columns in the header (which reveals the underlying grid granularity, e.g. 5-minute sub-columns under 30-minute time labels).
+- Add at most one candidate of \`kind: "form"\` whose \`label\` names the table (e.g. \`"Table 0 — weekly calendar"\`) and whose \`via\` describes the safe extraction shape.
+- **Prefer text-based extraction when cells are self-describing.** If the body cells in the captured rows contain text that already encodes their own label / time / identifier (e.g. \`"〇 第1コート 06/29(月) 11:00-12:00"\`, \`"Order #4521 Shipped 2026-06-29"\`), recommend parsing \`cell.textContent\` directly with a regex. Do NOT recommend computing position by walking \`colspan\` totals when the text already carries the answer — colspan unit-mismatches are a common source of empty-result bugs.
+- **Anchor reality — read literally, do not infer.** Each captured cell entry tells you exactly what the runtime DOM contains:
+  - \`→<url>\`: the cell has an anchor and that anchor has \`href="<url>"\`.
+  - \`→(no-href)\`: the cell has an anchor element BUT no usable href (e.g. \`href="javascript:void(0)"\` or attribute absent). The next step must click the cell / inner anchor — \`a.href\` is not a real URL.
+  - **Neither marker present (no \`→\` field at all): the cell has NO anchor element.** \`cell.querySelector('a')\` will return null. Do not write summaries that say "links/anchors are inside each cell" or "href is just missing from the fact sheet" — there is no anchor. The click navigation, if any, lives on the cell itself (e.g. via \`onclick\` / \`data-id\` and a delegated handler).
+  - \`a"…"\` linkText: anchor exists but wraps only part of the cell (e.g. just a marker icon). \`a.textContent\` is not the full label.
+  Do NOT speculate about "the anchor is inside but our scan didn't capture the href" — if a field is absent in the fact sheet for a cell, treat it as ABSENT in reality.
 
 Always return **exactly one JSON object** — no prose before or after, no extra text or thinking. Schema:
 {
@@ -607,6 +878,7 @@ async function triageDeepRecon(
       role: 'system',
       content: `You are a web-recon triage agent.
 Looking at the page's fact sheet and the step's goal, decide whether information not available on the current page resides in sub-pages or files (PDFs, etc.).
+${buildRuntimeContext()}
 
 ## Criteria — set shouldExplore = true when
 1. The goal implies "data fetching", "information gathering", "content verification", or "building a list"
@@ -775,6 +1047,7 @@ async function synthesizeDeepReport(
       role: 'system',
       content: `You summarize deep-recon findings for a website.
 Given the results of actually visiting several sub-pages, write a concise report so the code-generation AI can plan the right strategy.
+${buildRuntimeContext()}
 
 Include in the summary:
 1. Sub-page structure pattern (list → detail hierarchy, direct PDF links, etc.)
@@ -891,6 +1164,7 @@ export async function reconBrowserPage(
       title: '',
       fetchedAt: new Date().toISOString(),
       nav: [], links: [], buttons: [], standaloneInputs: [], forms: [], headings: [],
+      tables: [], tableCount: 0,
       hasIframes: false, linkCount: 0, buttonCount: 0,
       goalContext: goal,
     }
@@ -1087,6 +1361,57 @@ export function formatSiteMapForPrompt(siteMap: SiteMap | null | undefined): str
     for (const h of siteMap.headings.slice(0, 15)) {
       lines.push(`- h${h.level}: ${h.text}`)
     }
+  }
+
+  if (siteMap.tables && siteMap.tables.length > 0) {
+    const tCount = siteMap.tableCount ?? siteMap.tables.length
+    lines.push(``)
+    lines.push(`### Tables (${tCount}${tCount > siteMap.tables.length ? `, first ${siteMap.tables.length} sampled` : ''})`)
+    lines.push(`Each row below is a literal capture of cells in DOM order. Notation per cell:`)
+    lines.push(`\`tag[*rowspan,+colspan]"text" [a"linkText"] [→href|→(no-href)] {marker}\` — fields are emitted only when present.`)
+    lines.push(`Special: \`td(empty×N)\` collapses N consecutive structurally-empty cells (no text, no spans, no anchor, no marker). Use these runs to derive the underlying column granularity (e.g. if "07:00" is at index 2 and "07:30" at index 8, the grid is (8-2)=6 sub-columns per 30 minutes → 5-minute granularity).`)
+    lines.push(`Anchor fields (read literally — absent ≠ "missing from capture", absent = "doesn't exist in the live DOM"):`)
+    lines.push(`- \`→<url>\`: cell has an anchor whose \`href\` attribute is exactly \`<url>\`.`)
+    lines.push(`- \`→(no-href)\`: cell has an anchor element but \`href\` is empty / absent / \`javascript:void(0)\`. \`a.href\` will not give you a real URL — click the cell or the inner element instead.`)
+    lines.push(`- \`a"…"\`: anchor's textContent when it differs from the cell text. The anchor wraps only part of the cell, so \`a.textContent\` is not a substitute for \`cell.textContent\`.`)
+    lines.push(`- **None of the above for a given cell** ⇒ that cell has NO anchor element. \`cell.querySelector('a')\` returns null. Do NOT write code that depends on \`cell.querySelector('a').href\` — it will be \`undefined\` and any \`href.startsWith(...)\` filter will silently exclude every row, producing an empty-array bug. If you need a click target, use the cell itself (\`cell.click()\` / locator pointing at the cell).`)
+
+    siteMap.tables.forEach((t, ti) => {
+      const flags: string[] = []
+      if (t.hasSpans) flags.push('has rowspan/colspan')
+      if (t.hasIrregularRows) flags.push('rows have unequal cell counts')
+      const flagStr = flags.length > 0 ? ` — ${flags.join(', ')}` : ''
+      const head = `Table ${ti}: ${t.rowCount} rows × up to ${t.maxColCount} cells${flagStr}${t.caption ? ` — caption "${t.caption}"` : ''}`
+      lines.push(``)
+      lines.push(head)
+
+      for (let ri = 0; ri < t.rows.length; ri++) {
+        const row = t.rows[ri]
+        const cellDescs = row.cells.map(c => {
+          if (c.emptyRun) return `td(empty×${c.emptyRun})`
+          const spans = [
+            c.rowspan ? `*${c.rowspan}` : '',
+            c.colspan ? `+${c.colspan}` : '',
+          ].filter(Boolean).join('')
+          const text = c.text ? `"${c.text}"` : ''
+          const linkText = c.linkText ? ` a"${c.linkText}"` : ''
+          let hrefStr = ''
+          if (c.href !== undefined) {
+            hrefStr = c.href ? ` →${c.href}` : ` →(no-href)`
+          }
+          const marker = c.marker ? ` {${c.marker}}` : ''
+          return `${c.tag}${spans}${text}${linkText}${hrefStr}${marker}`.trim() || c.tag
+        })
+        lines.push(`  [${row.section} ${ri}] ${cellDescs.join(' | ')}`)
+      }
+
+      if (t.hasIrregularRows || t.hasSpans) {
+        lines.push(`  ⚠ Cell counts differ across rows (typically because of rowspan/colspan in leading columns).`)
+        lines.push(`     When mapping a header column index to a body cell, do NOT assume header[i] aligns with body[i].`)
+        lines.push(`     Walk each row's actual <td>/<th> sequence and account for the prefix-column offset (the leading cells before the data columns may be 0, 1, or more depending on whether a rowspan'd cell from above covers this row).`)
+        lines.push(`  ⚠ When body cells include self-describing text (the cell's textContent already encodes its own label / time / index, e.g. "〇 第1コート 06/29(月) 11:00-12:00"), prefer extracting from \`cell.textContent\` directly with a regex over computing the cell's position by walking colspan totals — that is more robust to span-unit miscounts and to row-cell-count irregularities. Use the colspan-walking strategy only when cells are unlabeled.`)
+      }
+    })
   }
 
   // Deep recon findings

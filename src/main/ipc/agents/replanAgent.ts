@@ -6,6 +6,7 @@ import type { BrowserWindow } from 'electron'
 import type { AiProviderConfig, StepPlan } from '../../../shared/types'
 import { chatNonStream } from './aiChat'
 import { sendProgress } from './progressHelper'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 export interface ReplanDecision {
   action: 'split' | 'replace' | 'skip' | 'retry_previous'
@@ -41,6 +42,7 @@ export async function replanStep(
       content: `You are a task-automation planner.
 A step has failed ${maxRetries} fix attempts and still does not run.
 This step's type is "${stepType}".
+${buildRuntimeContext()}
 
 Return the best course of action as JSON, choosing from:
 

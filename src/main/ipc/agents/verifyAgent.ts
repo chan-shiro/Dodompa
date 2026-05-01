@@ -9,6 +9,7 @@ import type { BrowserWindow } from 'electron'
 import type { AiProviderConfig } from '../../../shared/types'
 import { chatNonStream } from './aiChat'
 import { sendAndLog } from './progressHelper'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 /**
  * Extract the "post-condition" clause from a step description.
@@ -80,6 +81,60 @@ export function programmaticVerify(
       if (Array.isArray(value) && value.length === 0) {
         return { checked: true, success: false, reason: `ctx.shared.${key} is an empty array` }
       }
+      // Per-item outcome check: when the array elements look like
+      // "result records" (objects carrying a success/error/status/skipped
+      // outcome flag), require at least one entry to actually succeed.
+      // Without this, a step that "loops over N inputs and records a
+      // failure for each" passes the length>0 check despite having done
+      // zero useful work, and the next step downstream (which filters
+      // to .success entries) silently no-ops. The user-facing symptom is
+      // "the run looked successful but nothing actually happened."
+      if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+        const items = value as Array<Record<string, unknown>>
+        // Heuristic: every item must look like a result record. We require
+        // a *consistent* shape so we don't misjudge ordinary data arrays
+        // (e.g. a list of slots {court, startTime, endTime, ...}).
+        const outcomeFields = ['success', 'error', 'status', 'skipped', 'failed', 'ok', 'errorMessage']
+        const itemsWithOutcome = items.filter(it =>
+          typeof it === 'object' && it !== null
+          && outcomeFields.some(f => f in it)
+        )
+        if (itemsWithOutcome.length === items.length && items.length > 0) {
+          // Count actual successes. Conventions vary across generated code:
+          //   { success: true }
+          //   { error: undefined } (truthy error means failure)
+          //   { status: 'success' / 'ok' }
+          //   { skipped: true } counts as neither success nor failure
+          const isSuccess = (it: Record<string, unknown>): boolean => {
+            if (it.skipped === true) return false
+            if (it.success === true) return true
+            if (it.success === false) return false
+            if (it.failed === true) return false
+            if (it.ok === true) return true
+            if (typeof it.status === 'string' && /^(success|ok|done|completed?)$/i.test(it.status)) return true
+            if (typeof it.status === 'string' && /^(fail|error|skip|denied)/i.test(it.status)) return false
+            // Bare error field (no success flag): truthy error = failure
+            if ('error' in it && it.error) return false
+            if ('errorMessage' in it && it.errorMessage) return false
+            // No clear signal — treat as success to avoid false negatives
+            return true
+          }
+          const successCount = items.filter(isSuccess).length
+          if (successCount === 0) {
+            // Pull a sample error message to surface in the failure reason —
+            // this is what the AI diagnosis pass will read to figure out why.
+            const firstErr = items.find(it => it.error || it.errorMessage)
+            const errSample = firstErr
+              ? String(firstErr.error ?? firstErr.errorMessage).slice(0, 200)
+              : ''
+            return {
+              checked: true,
+              success: false,
+              reason: `ctx.shared.${key} has ${items.length} items but ALL are failures (no entry has success=true). The step ran the loop body N times but each iteration recorded an error.${errSample ? ` Sample error: "${errSample}"` : ''}`,
+            }
+          }
+        }
+      }
       // Content-type check: if post-condition describes expected value type,
       // verify the actual value matches (e.g., "numeric string" should be numeric)
       if (typeof value === 'string' && value.length > 0) {
@@ -146,6 +201,11 @@ export async function verifyStepExecution(
   executionResult?: { error?: string; returnValue?: unknown },
   executionShared: Record<string, unknown> = {},
   taskGoal?: string,
+  /** Captured console output from the step's run(). When present and the visual
+   *  path is taken, the verifier can corroborate the screenshot against actual
+   *  runtime evidence (e.g. "0 free anchors detected" → empty array is real,
+   *  not a screenshot artifact). */
+  executionLogs?: string[],
 ): Promise<{ success: boolean; reason?: string }> {
   // ── Phase 0: Programmatic post-condition check (before anything else) ──
   // If the description includes a post-condition that mentions a file path or
@@ -283,6 +343,7 @@ export async function verifyStepExecution(
         ? `You are an assistant that judges the success of macOS desktop-automation steps.
 Compare the before and after screenshots and decide whether the step succeeded.
 The screenshots are of the entire macOS desktop.
+${buildRuntimeContext()}
 
 Return only the following JSON:
 Success: {"success": true}
@@ -308,6 +369,7 @@ In messaging apps (Slack, Teams, Discord, LINE, Mail, etc.), the user's display 
 
         : `You are an assistant that judges the success of web-automation steps.
 Compare the before and after screenshots and decide whether the step succeeded.
+${buildRuntimeContext()}
 
 Return only the following JSON:
 Success: {"success": true}
@@ -339,6 +401,18 @@ In messaging apps / social services, the user's display name **very often does N
       role: 'user',
       content: [
         { type: 'text', text: `## Step description\n${stepDescription}` },
+        ...(executionLogs && executionLogs.length > 0
+          ? [{
+              type: 'text' as const,
+              text: `## Step's runtime console output (${executionLogs.length} line${executionLogs.length === 1 ? '' : 's'})\nUse this as primary evidence — it shows what the code actually saw and decided. The screenshots are secondary; if the logs say "0 items extracted" that's a real failure even if the page looks fine in the after-shot.\n\`\`\`\n${(() => {
+                const body = executionLogs.join('\n')
+                const MAX = 3000
+                return body.length > MAX
+                  ? body.slice(0, MAX / 2) + `\n… [snip ${body.length - MAX} chars] …\n` + body.slice(-MAX / 2)
+                  : body
+              })()}\n\`\`\``,
+            }]
+          : []),
         { type: 'text', text: '## Before screenshot' },
         ...(beforeScreenshot
           ? [{ type: 'image', image: beforeScreenshot, mimeType: 'image/png' }]

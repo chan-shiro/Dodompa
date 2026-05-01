@@ -7,10 +7,62 @@ import type { BrowserWindow } from 'electron'
 import type { AiProviderConfig, StepPlan, VariableDefinition } from '../../../shared/types'
 import { chatStream, chatNonStream } from './aiChat'
 import { sendProgress, sendAndLog } from './progressHelper'
+import { buildRuntimeContext } from './buildRuntimeContext'
 
 export interface CodePatch {
   search: string
   replace: string
+}
+
+/**
+ * Scan TypeScript source for **top-level** symbol declarations and return any
+ * names that are declared more than once. Top-level only — declarations inside
+ * `function`/block/closure are intentionally ignored because they live in
+ * their own scope.
+ *
+ * Used to reject patches that introduce duplicate `const X` / `let X` /
+ * `function X` / `class X` / `interface X` / `type X` next to an existing
+ * declaration of the same name. Without this guard the AI's patches loop
+ * forever in `ERROR: The symbol "X" has already been declared`.
+ *
+ * Cheap regex parser — not a real TS parser. False negatives (missed
+ * duplicates) are fine; false positives must be avoided. We only flag
+ * duplicates we're confident about, by limiting the scan to lines whose
+ * indentation is 0 or 2 spaces (typical top-level / interface body).
+ */
+export function findDuplicateTopLevelDeclarations(code: string): string[] {
+  const counts = new Map<string, number>()
+  const lines = code.split('\n')
+  // Match common top-level declarations. Anchor to start-of-line so we don't
+  // pick up identifiers that happen to follow a keyword inside an expression.
+  const declRe =
+    /^\s{0,2}(?:export\s+(?:async\s+)?)?(?:const|let|var|function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)\b/
+
+  let depth = 0  // brace depth — only count lines at brace depth 0
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\/\/.*$/, '')  // strip line comment
+    if (depth === 0) {
+      const m = line.match(declRe)
+      if (m) {
+        const name = m[1]
+        counts.set(name, (counts.get(name) ?? 0) + 1)
+      }
+    }
+    // Track brace depth so we ignore declarations inside function bodies,
+    // class bodies, blocks, etc. Strings/regex with literal braces would
+    // confuse this; in practice generated code uses normal formatting and
+    // false positives are rare.
+    for (const ch of line) {
+      if (ch === '{') depth++
+      else if (ch === '}') depth = Math.max(0, depth - 1)
+    }
+  }
+
+  const dupes: string[] = []
+  for (const [name, count] of counts) {
+    if (count > 1) dupes.push(name)
+  }
+  return dupes
 }
 
 /**
@@ -89,8 +141,10 @@ export function parsePatches(responseText: string): CodePatch[] | null {
   return null
 }
 
-const PATCH_SYSTEM_PROMPT = `You are an expert at fixing TypeScript code.
+function getPatchSystemPrompt(): string {
+  return `You are an expert at fixing TypeScript code.
 Analyze the cause of the error and return **only the minimum changes** as search/replace patches.
+${buildRuntimeContext()}
 
 ## Output format (required)
 
@@ -113,7 +167,35 @@ Return JSON in the following form. Each element of the patches array is a pair o
 - search must be long enough to uniquely identify the change site (include 2–3 lines of surrounding context)
 - If multiple sites need changes, put multiple patches in the patches array
 - To add an import, use search="" (empty string) + replace="import ..."
-- Do not include extra prose — return just the JSON`
+- Do not include extra prose — return just the JSON
+
+## ★★★ Anti-pattern: duplicate symbol declarations (do not cause this) ★★★
+A recurring class of bug in patches: introducing a \`const X\` / \`let X\` / \`function X\` / \`class X\` / \`interface X\` / \`type X\` whose name **already exists** in the original code. esbuild then rejects the patched file with \`ERROR: The symbol "X" has already been declared\` and the whole patch attempt is wasted.
+
+**Before adding any new declaration, scan the original code for that identifier.** If it already exists:
+- ❌ Don't write a new \`const slots = []\` next to the existing one. esbuild will fail.
+- ✅ Either (a) reuse the existing variable as-is, OR (b) make your search include the **prior** declaration of that name and have replace overwrite it.
+
+### Anti-pattern example (causes "symbol slots has already been declared")
+Original code already has:
+\`\`\`
+const slots: Slot[] = [];
+\`\`\`
+Bad patch — search is somewhere ELSE in the code, replace adds a new declaration:
+\`\`\`json
+{ "search": "console.log('done');", "replace": "const slots: Slot[] = await page.evaluate(...);\\nconsole.log('done');" }
+\`\`\`
+After applying, the file has TWO \`const slots\` → build fails.
+
+### Correct alternatives
+1. Reuse and reassign — change \`const\` to a function that fills the existing array:
+\`\`\`json
+{ "search": "const slots: Slot[] = [];", "replace": "const slots: Slot[] = await page.evaluate(...);" }
+\`\`\`
+2. If the original \`const\` truly needs to go, extend the search to include it and remove it in the replace.
+
+The same applies to \`let\`, \`function\`, \`class\`, \`interface\`, \`type\`, \`enum\`, and top-level imports. **If you find yourself writing a new declaration, your search MUST contain (and overwrite) the previous one.**`
+}
 
 /**
  * Fix step code using minimal patches instead of full regeneration.
@@ -131,6 +213,17 @@ export async function patchStepCode(
   selectorInfo?: string,
   strategyLedgerText?: string,
   variables?: VariableDefinition[],
+  /** Pre-rendered recon site map (formatSiteMapForPrompt). Lets the patch agent
+   *  see structural facts that aren't in `selectorInfo` — most notably the
+   *  table samples (rows, rowspan/colspan, anchor presence, cell text). Without
+   *  this, table-extraction patches end up flying blind to the actual DOM
+   *  structure and just shuffle code around without fixing anything. */
+  siteMapText?: string,
+  /** Captured console output from the failing run. Without this the patch
+   *  agent has to *guess* what the code observed; with it, the AI can see
+   *  e.g. `freeAnchorCount: 14, [debug] No-match free anchor text: "〇"` and
+   *  immediately deduce the regex was matched against the wrong textContent. */
+  executionLogs?: string[],
 ): Promise<string | null> {
   sendProgress(win, {
     phase: 'fixing', agent: 'patchCode',
@@ -164,18 +257,32 @@ export async function patchStepCode(
     ? `\n\nAvailable variables: ${variables.map(v => `ctx.input.${v.key}`).join(', ')}`
     : ''
 
+  const logsBlock = (() => {
+    if (!executionLogs || executionLogs.length === 0) return ''
+    let body = executionLogs.join('\n')
+    const MAX = 3500
+    if (body.length > MAX) {
+      body = body.slice(0, MAX / 2) + `\n… [snip ${body.length - MAX} chars] …\n` + body.slice(-MAX / 2)
+    }
+    return `\n\n## Console output from the failing run (${executionLogs.length} line${executionLogs.length === 1 ? '' : 's'})
+This is what the code itself observed and reported. Treat it as primary evidence — it tells you *which branch the code took* and *what data it actually saw*. If logs say "0 items extracted" or "regex no-match: ...", the bug is in extraction, not in the screen state.
+\`\`\`
+${body}
+\`\`\``
+  })()
+
   const messages = [
-    { role: 'system', content: PATCH_SYSTEM_PROMPT },
+    { role: 'system', content: getPatchSystemPrompt() },
     {
       role: 'user',
       content: `## Error
 ${errorMsg}
-
+${logsBlock}
 ## Current code
 ${codePrefix}\`\`\`typescript
 ${codeToSend}
 \`\`\`
-${selectorInfo ? `\n## Available selectors / elements\n${selectorInfo.slice(0, 2000)}` : ''}${variablesInfo}${strategyLedgerText ? `\n\n${strategyLedgerText}` : ''}`,
+${selectorInfo ? `\n## Available selectors / elements\n${selectorInfo.slice(0, 2000)}` : ''}${siteMapText ? `\n\n${siteMapText.slice(0, 6000)}` : ''}${variablesInfo}${strategyLedgerText ? `\n\n${strategyLedgerText}` : ''}`,
     },
   ]
 
@@ -236,6 +343,22 @@ ${selectorInfo ? `\n## Available selectors / elements\n${selectorInfo.slice(0, 2
       return null
     }
 
+    // Reject patches that introduce duplicate top-level declarations. The AI
+    // routinely appends new `const X` / `let X` next to an existing one, which
+    // esbuild then rejects with "ERROR: The symbol 'X' has already been declared".
+    // Rather than spend the next retry on the same mistake, surface this here
+    // so the caller can fall back to full regen with an informative error.
+    const dupes = findDuplicateTopLevelDeclarations(patched)
+    if (dupes.length > 0) {
+      sendAndLog(win, taskId, {
+        phase: 'fixing', agent: 'patchCode',
+        stepIndex,
+        stepName: stepPlan.name,
+        message: `⚠️ Patch rejected — would create duplicate top-level declaration(s): ${dupes.join(', ')}. The patch added a new \`const\`/\`let\`/\`function\` next to an existing one of the same name. Falling back to full regeneration.`,
+      }, JSON.stringify({ dupes, patches }, null, 2))
+      return null
+    }
+
     // Measure efficiency: how much smaller is the patch vs full code replacement
     const patchChars = patches.reduce((sum, p) => sum + p.search.length + p.replace.length, 0)
     const savingsPct = Math.round(100 * (1 - patchChars / currentCode.length))
@@ -285,7 +408,7 @@ export async function patchStepCodeForRunner(
   }
 
   const messages = [
-    { role: 'system', content: PATCH_SYSTEM_PROMPT },
+    { role: 'system', content: getPatchSystemPrompt() },
     {
       role: 'user',
       content: `## Error
